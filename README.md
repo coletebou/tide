@@ -63,6 +63,13 @@ remote machines over SSH, and pairs with AI agents.
   that edits files and runs commands on your SSH host.
 - Language servers over SSH, git commit and push, Open VSX web extensions.
 
+## Prior art
+
+Tide's design comes out of a research pass over about 25 iOS editors, VS
+Code's internals, native Swift text engines, iOS platform limits, iPad SSH
+clients and AI coding apps. Read it in
+[docs/reports/iOS VS Code clone prior art.md](<docs/reports/iOS VS Code clone prior art.md>).
+
 ## Building
 
 Requirements: Xcode 26 or later. Tide runs on iOS and iPadOS 17 or later.
