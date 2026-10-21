@@ -111,6 +111,14 @@ struct TextFileCodecTests {
         }
     }
 
+    /// Saving never drops text: a character the file's encoding cannot hold
+    /// is an error, not a silent `?`.
+    @Test func refusesLossyEncoding() throws {
+        let format = TextFileFormat(encoding: .windows1252, lineEnding: .lf)
+        #expect(try TextFileCodec.encode("caf\u{E9} \u{20AC}\n", format: format) == Data([0x63, 0x61, 0x66, 0xE9, 0x20, 0x80, 0x0A]))
+        #expect(throws: WorkspaceError.self) { try TextFileCodec.encode("done \u{2713}\n", format: format) }
+    }
+
     @Test func normalizesLineEndings() {
         #expect(LineEnding.crlf.normalize("a\nb\r\nc\rd") == "a\r\nb\r\nc\r\nd")
         #expect(LineEnding.lf.normalize("a\r\nb") == "a\nb")
@@ -166,5 +174,22 @@ struct WorkspaceSearchTests {
         }
         #expect(results.map(\.path) == ["src/a.swift"])
         #expect(results.first?.matches.first?.preview == "let needle = 1")
+    }
+
+    /// Commas inside `{...}` (and `[...]`) separate alternatives, not patterns, as in VS Code.
+    @Test func includePatternsKeepBraceAlternatives() async throws {
+        #expect(WorkspaceSearch.globs("*.{js,ts}, docs/**").map(\.pattern) == ["**/*.{js,ts}", "docs/**"])
+        #expect(WorkspaceSearch.globs("[,]x,y").map(\.pattern) == ["**/[,]x", "**/y"])
+        let workspace = try TemporaryWorkspace(["a.js": "needle\n", "lib/b.ts": "needle\n", "c.swift": "needle\n"])
+        var results: [FileSearchResult] = []
+        for try await result in WorkspaceSearch.search(root: workspace.url, query: SearchQuery(pattern: "needle", include: "*.{js,ts}")) {
+            results.append(result)
+        }
+        #expect(results.map(\.path).sorted() == ["a.js", "lib/b.ts"])
+        results = []
+        for try await result in WorkspaceSearch.search(root: workspace.url, query: SearchQuery(pattern: "needle", exclude: "*.{js,ts}")) {
+            results.append(result)
+        }
+        #expect(results.map(\.path) == ["c.swift"])
     }
 }
