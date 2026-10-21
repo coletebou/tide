@@ -98,12 +98,15 @@ struct GitIgnoreTests {
             if Int.random(in: 0..<3, using: &rng) == 0 { pattern = "!" + pattern }
             return pattern
         }
+        // Git before 2.52 matched some `**` patterns wrongly, so it cannot judge those.
+        let oldGit = try sandbox.gitVersion().lexicographicallyPrecedes([2, 52])
+        func usable(_ line: String) -> Bool { !(oldGit && Self.hitsPrefixGlobstarBug(line)) }
         let ignoreDirectories = [""] + directories.sorted().prefix(4).map { $0 + "/" }
         for directory in ignoreDirectories {
-            let lines = (0..<Int.random(in: 3...9, using: &rng)).map { _ in randomPattern() }
+            let lines = (0..<Int.random(in: 3...9, using: &rng)).map { _ in randomPattern() }.filter(usable)
             try sandbox.write(lines.joined(separator: "\n") + "\n", to: directory + ".gitignore", in: repository)
         }
-        let excludes = (0..<4).map { _ in randomPattern() }.joined(separator: "\n")
+        let excludes = (0..<4).map { _ in randomPattern() }.filter(usable).joined(separator: "\n")
         try sandbox.write(excludes + "\n", to: ".git/info/exclude", in: repository)
 
         let queries = files.sorted() + directories.sorted()
@@ -127,6 +130,50 @@ struct GitIgnoreTests {
             if ours != expected[path] { mismatches.append("\(path): ours \(ours), git \(expected[path].map(String.init) ?? "?")") }
         }
         #expect(mismatches.isEmpty, "\(mismatches.joined(separator: "\n"))")
+    }
+
+    /// Before 2.52, git cut a pattern's literal prefix off before matching the
+    /// rest, so a `**` right after literal text (as in `B**/x`) acted like a
+    /// leading `**/` and matched across directories. git commit 1940a02dc112,
+    /// "match_pathname(): give fnmatch one char of prefix context", fixed
+    /// that. True for patterns whose verdict can differ between the two.
+    static func hitsPrefixGlobstarBug(_ line: String) -> Bool {
+        var pattern = Substring(line)
+        if pattern.hasPrefix("!") { pattern = pattern.dropFirst() }
+        if pattern.hasSuffix("/") { pattern = pattern.dropLast() }
+        // Patterns without a slash match file names whole and were not affected.
+        guard pattern.contains("/") else { return false }
+        if pattern.hasPrefix("/") { pattern = pattern.dropFirst() }
+        let literal = pattern.prefix { !"*?[\\".contains($0) }
+        return !literal.isEmpty && literal.last != "/" && pattern.dropFirst(literal.count).hasPrefix("**")
+    }
+
+    /// A `**` that follows other text in its path component is an ordinary
+    /// `*`, even right after a pattern's literal prefix. This is git's
+    /// behavior since 2.52 (and how the gitignore documentation reads); older
+    /// git also matched `foobar` and `foo/x/bar` here.
+    @Test func doubleStarAfterLiteralTextStaysInsideOneComponent() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        try sandbox.git("config", "core.ignorecase", "true", in: repository)
+        let patterns = "foo**/bar\nB**/c\\[d]\n"
+        let paths = ["foobar", "foo/x/bar", "fooxy/bar", "B.txt/a/c[d]", "b/foo/c[d]", "b.txt/c[d]"]
+        let expected = ["fooxy/bar", "b.txt/c[d]"]
+
+        let rules = GitIgnoreRules(workTree: repository, patterns: patterns, ignoreCase: true)
+        #expect(paths.filter { rules.isIgnored($0, isDirectory: false) } == expected)
+        #expect(Self.hitsPrefixGlobstarBug("foo**/bar") && Self.hitsPrefixGlobstarBug("!/B**/c\\[d]/"))
+        #expect(!Self.hitsPrefixGlobstarBug("src/**/c.swift") && !Self.hitsPrefixGlobstarBug("a**b") && !Self.hitsPrefixGlobstarBug("**/x"))
+
+        guard try !sandbox.gitVersion().lexicographicallyPrecedes([2, 52]) else { return }
+        try sandbox.write(patterns, to: ".git/info/exclude", in: repository)
+        let output = try sandbox.gitData(
+            ["check-ignore", "--no-index", "-z", "--stdin"],
+            in: repository,
+            input: Data(paths.joined(separator: "\0").utf8 + [0]),
+            allowedStatus: [0, 1]
+        )
+        #expect(output.split(separator: 0).map { String(decoding: $0, as: UTF8.self) } == expected)
     }
 
     @Test func nestedGitignoresWithNegationMatchGitStatus() throws {

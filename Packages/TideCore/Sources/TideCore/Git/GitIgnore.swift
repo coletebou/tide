@@ -6,7 +6,9 @@ import Foundation
 ///   (`!` or `^` negates, ranges, `[:alpha:]`-style classes, `\` escapes).
 /// - In pathname mode none of those match `/`. A `**` between slashes (or at
 ///   either end) matches across directories: `a/**/b` matches `a/b` and
-///   `a/x/y/b`; any other `**` acts like `*`.
+///   `a/x/y/b`; any other `**` acts like `*`. This follows git 2.52 and later:
+///   older git also let a `**` right after a pattern's leading literal text
+///   (as in `foo**/bar`) cross directories, which git fixed as a bug.
 /// - With case folding, ASCII letters in the text and in unescaped pattern
 ///   literals compare case-insensitively. Like git, escaped letters and
 ///   letters inside sets are compared as written.

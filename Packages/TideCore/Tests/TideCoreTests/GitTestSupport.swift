@@ -116,6 +116,14 @@ final class GitSandbox {
         String(decoding: try gitData(arguments, in: directory, environment: extra), as: UTF8.self)
     }
 
+    /// The version of the git the tests run, such as `[2, 54, 0]` for
+    /// "git version 2.54.0 (Apple Git-157)".
+    func gitVersion() throws -> [Int] {
+        let text = try git("--version", in: root).trimmingCharacters(in: .whitespacesAndNewlines)
+        let number = text.split(separator: " ").dropFirst(2).first ?? ""
+        return number.split(separator: ".").compactMap { Int($0) }
+    }
+
     /// `git init` with branch `main` and a committer identity.
     func makeRepository(_ name: String = "repo", arguments: [String] = []) throws -> URL {
         let url = root.appendingPathComponent(name, isDirectory: true)
