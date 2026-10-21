@@ -93,4 +93,121 @@ struct VirtualShellTests {
         #expect(shell.run("printf 'a\\nb\\n'").text == "a\r\nb\r\n")
         #expect(shell.prompt.contains("tide"))
     }
+
+    /// As with cp(1) and mv(1), nothing is removed until the source is known
+    /// to be usable, and a source that is its own destination is left alone.
+    @Test func copyAndMoveNeverRemoveTheirDestinationFirst() throws {
+        let workspace = try TemporaryWorkspace(["notes.txt": "keep me\n", "a.txt": "a\n", "dir/b.txt": "b\n"])
+        let shell = VirtualShell(root: workspace.url)
+        #expect(plain(shell.run("cp notes.txt notes.txt")) == "cp: notes.txt and notes.txt are identical (not copied).\n")
+        #expect(plain(shell.run("mv notes.txt .")) == "mv: notes.txt and ./notes.txt are identical\n")
+        #expect(shell.run("cp *.txt .").exitCode == 1)
+        #expect(shell.run("cp dir/b.txt dir/").exitCode == 1)
+        #expect(workspace.read("notes.txt") == "keep me\n")
+        #expect(workspace.read("a.txt") == "a\n")
+        #expect(workspace.read("dir/b.txt") == "b\n")
+
+        // A missing source leaves an existing destination alone.
+        #expect(plain(shell.run("cp missing.txt notes.txt")) == "cp: missing.txt: No such file or directory\n")
+        #expect(plain(shell.run("mv missing.txt notes.txt")) == "mv: missing.txt: No such file or directory\n")
+        #expect(workspace.read("notes.txt") == "keep me\n")
+
+        // A folder cannot go inside itself, and the workspace root cannot be copied or moved.
+        #expect(plain(shell.run("cp dir dir/inner")) == "cp: cannot copy dir into itself\n")
+        #expect(plain(shell.run("mv dir dir/inner")) == "mv: cannot move dir into itself\n")
+        #expect(plain(shell.run("cp . .")) == "cp: refusing to copy the workspace root\n")
+        #expect(plain(shell.run("mv / moved")) == "mv: refusing to move the workspace root\n")
+        #expect(workspace.read("dir/b.txt") == "b\n")
+
+        // A file does not replace a folder, nor a folder a file.
+        try FileManager.default.createDirectory(at: workspace.url.appendingPathComponent("box/a.txt"), withIntermediateDirectories: true)
+        #expect(plain(shell.run("cp a.txt box")) == "cp: box/a.txt: Is a directory\n")
+        #expect(plain(shell.run("mv dir notes.txt")) == "mv: notes.txt: Not a directory\n")
+        #expect(workspace.read("notes.txt") == "keep me\n")
+        #expect(workspace.read("dir/b.txt") == "b\n")
+
+        // Replacing a different file still works.
+        #expect(shell.run("cp a.txt notes.txt").exitCode == 0)
+        #expect(workspace.read("notes.txt") == "a\n")
+        #expect(shell.run("mv a.txt dir/b.txt").exitCode == 0)
+        #expect(workspace.read("dir/b.txt") == "a\n")
+        #expect(workspace.read("a.txt") == nil)
+    }
+
+    /// `>>` adds bytes to the end of the file; it never re-encodes or drops what was there.
+    @Test func appendingKeepsTheExistingBytes() throws {
+        let workspace = try TemporaryWorkspace()
+        let legacy = workspace.url.appendingPathComponent("legacy.txt")
+        // "café" in Windows-1252, which is not valid UTF-8.
+        let original = Data([0x63, 0x61, 0x66, 0xE9, 0x0A])
+        try original.write(to: legacy)
+        let shell = VirtualShell(root: workspace.url)
+        #expect(shell.run("echo note >> legacy.txt").exitCode == 0)
+        #expect(try Data(contentsOf: legacy) == original + Data("note\n".utf8))
+        #expect(shell.run("echo first >> new.txt && echo second >> new.txt").exitCode == 0)
+        #expect(workspace.read("new.txt") == "first\nsecond\n")
+    }
+
+    /// A backslash quotes the character after it, so `\*` is a file named `*`, not a glob.
+    @Test func escapedWildcardsAreLiteral() throws {
+        let workspace = try TemporaryWorkspace(["*": "star\n", "keep.txt": "keep\n", "what?": "question\n"])
+        let shell = VirtualShell(root: workspace.url)
+        #expect(plain(shell.run("echo \\*")) == "*\n")
+        #expect(plain(shell.run("echo what\\?")) == "what?\n")
+        #expect(shell.run("rm \\*").exitCode == 0)
+        #expect(workspace.read("*") == nil)
+        #expect(workspace.read("keep.txt") == "keep\n")
+        #expect(plain(shell.run("echo *")) == "keep.txt what?\n")
+    }
+
+    @Test func rmdirRefusesTheWorkspaceRoot() throws {
+        let workspace = try TemporaryWorkspace()
+        let shell = VirtualShell(root: workspace.url)
+        #expect(plain(shell.run("rmdir .")) == "rmdir: refusing to remove the workspace root\n")
+        #expect(plain(shell.run("rmdir /")) == "rmdir: refusing to remove the workspace root\n")
+        #expect(FileManager.default.fileExists(atPath: workspace.url.path))
+        #expect(shell.run("mkdir empty && rmdir empty").exitCode == 0)
+    }
+
+    #if os(macOS)
+    /// Swift's `prefix` and `suffix` trap on negative lengths.
+    @Test func negativeHeadCountDoesNotCrash() async {
+        await #expect(processExitsWith: .success) {
+            let workspace = try TemporaryWorkspace(["list.txt": "1\n2\n3\n"])
+            _ = VirtualShell(root: workspace.url).run("head -n -1 list.txt")
+        }
+    }
+
+    @Test func negativeTailCountDoesNotCrash() async {
+        await #expect(processExitsWith: .success) {
+            let workspace = try TemporaryWorkspace(["list.txt": "1\n2\n3\n"])
+            _ = VirtualShell(root: workspace.url).run("tail -n -1 list.txt")
+        }
+    }
+    #endif
+}
+
+struct LineEditorTests {
+    /// Everything in one chunk of input is processed, including what follows
+    /// Enter or ⌃C, so a pasted script runs every line.
+    @Test func keepsInputAfterEnterAndInterrupt() {
+        var editor = LineEditor()
+        let lines = editor.feed(Array("pwd\recho hi\r".utf8), history: [])
+        #expect(lines == [.output("pwd\r\n"), .submit("pwd"), .output("echo hi\r\n"), .submit("echo hi")])
+        let interrupted = editor.feed(Array("oops\u{03}ls\r".utf8), history: [])
+        #expect(interrupted == [.output("oops^C\r\n"), .interrupt, .output("ls\r\n"), .submit("ls")])
+        // Text after the last line break stays in the editor.
+        let partial = editor.feed(Array("cd src\nmake".utf8), history: [])
+        #expect(partial == [.output("cd src\r\n"), .submit("cd src"), .output("make")])
+        #expect(editor.line == "make")
+    }
+
+    /// A CRLF pair, as in text pasted from Windows files, is a single Enter.
+    @Test func carriageReturnLineFeedIsOneEnter() {
+        var editor = LineEditor()
+        let pasted = editor.feed(Array("a\r\nb\r\n".utf8), history: [])
+        #expect(pasted == [.output("a\r\n"), .submit("a"), .output("b\r\n"), .submit("b")])
+        let lineFeed = editor.feed(Array("\n".utf8), history: [])
+        #expect(lineFeed == [.output("\r\n"), .submit("")])
+    }
 }
