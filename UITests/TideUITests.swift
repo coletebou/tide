@@ -96,6 +96,47 @@ final class TideUITests: TideUITestCase {
         require(app, "the terminal to come back") { terminal.exists }
     }
 
+    /// Connects to the OpenSSH server CI starts on the runner
+    /// (scripts/ssh-test-server.sh): the host key question, a command run on
+    /// the host, its output in the terminal, and exit closing the terminal.
+    @MainActor
+    func testSSHTerminalRunsACommandOnTheHost() throws {
+        let environment = ProcessInfo.processInfo.environment
+        guard let port = environment["TIDE_SSH_PORT"], let user = environment["TIDE_SSH_USER"], let key = environment["TIDE_SSH_KEY"] else {
+            throw XCTSkip("Needs the test SSH server; CI starts one with scripts/ssh-test-server.sh.")
+        }
+        let app = try launchTide(environment: ["TIDE_UI_TEST_SSH_KEY": key])
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
+        focus(app, app.paletteField, "the Command Palette").typeText("connect to host")
+        require(app, "Remote-SSH: Connect to Host... as the top match") { app.paletteRows.firstMatch.label.contains("Remote-SSH: Connect to Host") }
+        app.paletteField.typeText("\n")
+        require(app, "the host prompt") { app.staticTexts["Connect to Host"].exists }
+        focus(app, app.paletteField, "the host prompt").typeText("\(user)@127.0.0.1:\(port)")
+        require(app, "the typed host as the first row") { app.paletteRows.firstMatch.label.contains("\(user)@127.0.0.1:\(port)") }
+        app.paletteField.typeText("\n")
+        let question = app.staticTexts["The authenticity of 127.0.0.1 can't be established"]
+        require(app, "the host key question", timeout: 30) { question.exists }
+        XCTAssertTrue(app.paletteRows.firstMatch.label.contains("Continue"))
+        XCTAssertTrue(app.paletteRows.firstMatch.label.contains("SHA256:"))
+        screenshot(app, "ssh-host-key")
+        app.paletteRows.firstMatch.tap()
+        require(app, "the question to close") { !question.exists }
+
+        let terminal = app.element("terminal")
+        require(app, "the SSH terminal") { terminal.exists }
+        focus(app, terminal, "the terminal").typeText("echo ssh-$((6*7))\n")
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
+        focus(app, app.paletteField, "the Command Palette").typeText("accessible buffer")
+        require(app, "Terminal: Focus Accessible Buffer as the top match") { app.paletteRows.firstMatch.label.contains("Terminal: Focus Accessible Buffer") }
+        app.paletteField.typeText("\n")
+        let buffer = app.staticTexts["terminal-buffer"]
+        require(app, "the host's output in the terminal", timeout: 30) { buffer.label.contains("ssh-42") }
+        screenshot(app, "ssh-terminal")
+        app.buttons["terminal-buffer-close"].tap()
+        focus(app, terminal, "the terminal").typeText("exit\n")
+        require(app, "exit to close the SSH terminal", timeout: 30) { app.staticTexts["No terminal"].exists }
+    }
+
     @MainActor
     func testSearchFindsTextAcrossTheWorkspace() throws {
         let app = try launchTide()

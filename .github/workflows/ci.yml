@@ -53,6 +53,13 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           -skipPackagePluginValidation -skipMacroValidation
           CODE_SIGNING_ALLOWED=NO build
+      - name: Keep the resolved package versions
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-resolved
+          path: Tide.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
+          if-no-files-found: warn
 
   ui:
     name: UI tests on an iPad simulator
@@ -82,6 +89,16 @@ jobs:
           # starts, so the tests use menu shortcuts and the on-screen keyboard.
           xcrun simctl bootstatus "$udid" -b
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Start a test SSH server
+        run: |
+          scripts/ssh-test-server.sh start "$RUNNER_TEMP/sshd"
+          # xcodebuild hands TEST_RUNNER_ variables to the UI tests without the prefix.
+          . "$RUNNER_TEMP/sshd/env"
+          {
+            echo "TEST_RUNNER_TIDE_SSH_PORT=$TIDE_SSH_PORT"
+            echo "TEST_RUNNER_TIDE_SSH_USER=$TIDE_SSH_USER"
+            echo "TEST_RUNNER_TIDE_SSH_KEY=$(base64 < "$RUNNER_TEMP/sshd/client_ed25519" | tr -d '\n')"
+          } >> "$GITHUB_ENV"
       - name: Run the UI tests
         run: >
           xcodebuild test -project Tide.xcodeproj -scheme Tide
@@ -89,6 +106,9 @@ jobs:
           -skipPackagePluginValidation -skipMacroValidation
           -resultBundlePath build/UITests.xcresult
           CODE_SIGNING_ALLOWED=NO
+      - name: Show the SSH server's log
+        if: always()
+        run: cat "$RUNNER_TEMP/sshd/sshd.log" 2>/dev/null || true
       - name: Export the screenshots
         if: always()
         run: |

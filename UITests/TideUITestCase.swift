@@ -10,15 +10,17 @@ class TideUITestCase: XCTestCase {
 
     /// Launches the app. `settings` is merged over the defaults the tests
     /// share: auto save is off, so an edit stays unsaved until a test saves it.
+    /// `environment` adds launch environment variables.
     @MainActor
     @discardableResult
-    func launchTide(settings: [String: Any] = [:]) throws -> XCUIApplication {
+    func launchTide(settings: [String: Any] = [:], environment: [String: String] = [:]) throws -> XCUIApplication {
         let app = XCUIApplication()
         let defaults: [String: Any] = ["files.autoSave": "off"]
         let merged = defaults.merging(settings) { _, new in new }
         let json = try JSONSerialization.data(withJSONObject: merged, options: [.sortedKeys])
         app.launchArguments = ["-uiTesting"]
         app.launchEnvironment["TIDE_UI_TEST_SETTINGS"] = String(decoding: json, as: UTF8.self)
+        app.launchEnvironment.merge(environment) { _, new in new }
         app.launch()
         require(app, "the workbench to open README.md", timeout: 90) { app.editor.exists }
         return app
