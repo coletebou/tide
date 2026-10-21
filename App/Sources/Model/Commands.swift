@@ -164,6 +164,8 @@ enum BuiltinCommands {
         // Editor
         add("actions.find", "Find", "Editor", "⌘F", enabled: hasEditor) { $0.activeController?.showFind(replace: false) }
         add("editor.action.startFindReplaceAction", "Replace", "Editor", "⌥⌘F", enabled: hasEditor) { $0.activeController?.showFind(replace: true) }
+        add("editor.action.nextMatchFindAction", "Find Next", "Editor", "⌘G", enabled: hasEditor) { $0.activeController?.findNext() }
+        add("editor.action.previousMatchFindAction", "Find Previous", "Editor", "⇧⌘G", enabled: hasEditor) { $0.activeController?.findPrevious() }
         add("editor.action.commentLine", "Toggle Line Comment", "Editor", "⌘/", enabled: hasEditor) { $0.activeController?.toggleComment() }
         add("editor.action.indentLines", "Indent Line", "Editor", "⌘]", enabled: hasEditor) { $0.activeController?.indentLines() }
         add("editor.action.outdentLines", "Outdent Line", "Editor", "⌘[", enabled: hasEditor) { $0.activeController?.outdentLines() }

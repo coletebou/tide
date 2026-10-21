@@ -204,8 +204,8 @@ final class CodeTextView: UITextView {
     @objc private func keySelectNext() { controller?.selectNextOccurrence() }
     @objc private func keyFind() { controller?.showFind(replace: false) }
     @objc private func keyReplace() { controller?.showFind(replace: true) }
-    @objc private func keyFindNext() { if controller?.find.isVisible == true { controller?.find.next() } else { controller?.showFind(replace: false) } }
-    @objc private func keyFindPrevious() { if controller?.find.isVisible == true { controller?.find.previous() } else { controller?.showFind(replace: false) } }
+    @objc private func keyFindNext() { controller?.findNext() }
+    @objc private func keyFindPrevious() { controller?.findPrevious() }
     @objc private func keyEscape() { if controller?.find.isVisible == true { controller?.hideFind() } }
 }
 
@@ -694,6 +694,10 @@ final class EditorController: NSObject, UITextViewDelegate {
         find.focusRequest += 1
         find.recompute(fromCaret: true)
     }
+
+    /// The next or previous match, opening Find first when it is closed (⌘G, ⇧⌘G).
+    func findNext() { if find.isVisible { find.next() } else { showFind(replace: false) } }
+    func findPrevious() { if find.isVisible { find.previous() } else { showFind(replace: false) } }
 
     func hideFind() {
         find.isVisible = false

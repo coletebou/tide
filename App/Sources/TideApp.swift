@@ -187,6 +187,8 @@ struct TideCommands: Commands {
             Divider()
             item("Find", "actions.find", "f")
             item("Replace", "editor.action.startFindReplaceAction", "f", [.command, .option])
+            item("Find Next", "editor.action.nextMatchFindAction", "g")
+            item("Find Previous", "editor.action.previousMatchFindAction", "g", [.command, .shift])
             item("Find in Files", "workbench.view.search", "f", [.command, .shift])
             Divider()
             item("Toggle Line Comment", "editor.action.commentLine", "/")
