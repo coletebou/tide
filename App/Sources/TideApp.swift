@@ -95,9 +95,11 @@ enum WorkspaceLauncher {
     private static func resetForUITesting() {
         UserDefaults.standard.removeObject(forKey: bookmarkKey)
         UserDefaults.standard.removeObject(forKey: CommandRegistry.recentlyUsedKey)
-        try? FileManager.default.removeItem(at: Workbench.userDirectory)
+        let user = Workbench.userDirectory
+        try? FileManager.default.removeItem(at: user)
+        try? FileManager.default.createDirectory(at: user, withIntermediateDirectories: true)
         if let settings = ProcessInfo.processInfo.environment["TIDE_UI_TEST_SETTINGS"] {
-            try? settings.write(to: Workbench.userDirectory.appendingPathComponent(Workbench.settingsPath), atomically: true, encoding: .utf8)
+            try? settings.write(to: user.appendingPathComponent(Workbench.settingsPath), atomically: true, encoding: .utf8)
         }
         seedSampleIfNeeded(force: true)
     }
