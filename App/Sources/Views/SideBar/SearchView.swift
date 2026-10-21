@@ -18,6 +18,7 @@ struct SearchView: View {
                     Image(systemName: search.showReplace ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).frame(width: 16, height: 26)
                 }
                 .buttonStyle(.plain)
+                .accessibilityIdentifier("search-toggle-replace")
                 VStack(spacing: 4) {
                     inputField("Search", text: $search.query, focused: true) {
                         toggle("Aa", "Match Case", $search.matchCase)
@@ -35,6 +36,7 @@ struct SearchView: View {
                             .buttonStyle(.plain)
                             .disabled(!search.canReplaceAll)
                             .accessibilityLabel("Replace All")
+                            .accessibilityIdentifier("search-replace-all")
                         }
                     }
                 }
@@ -45,6 +47,7 @@ struct SearchView: View {
                 Image(systemName: "ellipsis").font(.system(size: 12)).frame(maxWidth: .infinity, alignment: .trailing)
             }
             .buttonStyle(.plain)
+            .accessibilityIdentifier("search-toggle-details")
             .padding(.trailing, 4)
             if search.showDetails {
                 VStack(alignment: .leading, spacing: 2) {
