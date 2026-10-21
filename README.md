@@ -69,6 +69,7 @@ Tide's design comes out of a research pass over about 25 iOS editors, VS
 Code's internals, native Swift text engines, iOS platform limits, iPad SSH
 clients and AI coding apps. Read it in
 [docs/reports/iOS VS Code clone prior art.md](<docs/reports/iOS VS Code clone prior art.md>).
+A follow-up looks at [libghostty and Tide's terminal](<docs/reports/libghostty terminal fit for Tide.md>).
 
 ## Building
 
