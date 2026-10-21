@@ -68,10 +68,10 @@ jobs:
           # on a hardware one; Simulator attaches it and hides the on-screen one.
           defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true
           defaults write com.apple.iphonesimulator DevicePreferences -dict-add "$udid" '<dict><key>ConnectHardwareKeyboard</key><true/></dict>'
-          # Boot first, then let Simulator attach to the booted device.
-          xcrun simctl bootstatus "$udid" -b
+          # Simulator boots the device itself, so its keyboard is attached from
+          # the start; bootstatus only waits (with -b it would race that boot).
           open -a Simulator --args -CurrentDeviceUDID "$udid"
-          for _ in $(seq 30); do pgrep -x Simulator >/dev/null && break; sleep 1; done
+          xcrun simctl bootstatus "$udid"
           sleep 5
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Run the UI tests
