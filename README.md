@@ -50,14 +50,19 @@ remote machines over SSH, and pairs with AI agents.
 - Problems panel with JSON validation and unbalanced-bracket checks.
 - Terminal panel (SwiftTerm) with a built-in shell over the workspace: pipes,
   globs, history and tab completion. iOS apps cannot start processes, so full
-  shells will come over SSH.
+  shells come over SSH: Remote-SSH: Connect to Host... opens a shell on a host,
+  checks its key against an OpenSSH known_hosts file, and logs in with an
+  Ed25519 or ECDSA key kept in the Keychain (made in Tide, or imported) or with
+  a password. Terminal: Focus Accessible Buffer shows the terminal's text for
+  VoiceOver and for copying.
 - Source Control view backed by a pure-Swift reader for `.git` folders:
   branch, status and diffs against HEAD.
 
 ## Roadmap
 
-- **Remote development**, modeled on Termius: SSH hosts and keys, real
-  terminals, SFTP-backed remote workspaces, snippets and port forwarding.
+- **Remote development**, modeled on Termius, on top of the SSH terminals:
+  SFTP-backed remote workspaces, tmux reattach after iOS suspends the app,
+  Secure Enclave keys, snippets and port forwarding.
 - **AI assistance**, drawing on ChatGPT, Claude, Grok and Cursor: a chat panel
   with workspace context, inline edits reviewed hunk by hunk, and an agent
   that edits files and runs commands on your SSH host.
@@ -69,7 +74,9 @@ Tide's design comes out of a research pass over about 25 iOS editors, VS
 Code's internals, native Swift text engines, iOS platform limits, iPad SSH
 clients and AI coding apps. Read it in
 [docs/reports/iOS VS Code clone prior art.md](<docs/reports/iOS VS Code clone prior art.md>).
-A follow-up looks at [libghostty and Tide's terminal](<docs/reports/libghostty terminal fit for Tide.md>).
+A follow-up looks at [libghostty and Tide's terminal](<docs/reports/libghostty terminal fit for Tide.md>),
+and [SSH client choice](<docs/reports/SSH client choice.md>) explains why SSH
+sits on Apple's swift-nio-ssh.
 
 ## Building
 
@@ -89,10 +96,19 @@ run on a Mac in seconds:
 swift test --package-path Packages/TideCore
 ```
 
+The SSH client's tests run against a real OpenSSH server, which
+`scripts/ssh-test-server.sh` starts as you on 127.0.0.1 with throwaway keys
+(macOS ships `sshd`); without one they are skipped:
+
+```sh
+swift test --package-path Packages/TideSSH
+```
+
 The end-to-end tests in `UITests/` drive the real app on an iPad simulator
 with hardware-keyboard shortcuts: the Command Palette, Quick Open, the
-terminal, Search, find and replace, saving, Settings, themes and the split
-editor. Each launch passes `-uiTesting`, which starts from a fresh copy of the
+terminal (including an SSH session against the test server, when the
+`TIDE_SSH_*` variables point the tests at one), Search, find and replace,
+saving, Settings, themes and the split editor. Each launch passes `-uiTesting`, which starts from a fresh copy of the
 sample workspace and default settings (plus any `TIDE_UI_TEST_SETTINGS` JSON):
 
 ```sh
@@ -109,6 +125,8 @@ build artifact.
 | Layer | Where | What |
 |---|---|---|
 | `TideCore` | `Packages/TideCore` | Line index, tokenizers and language catalog, fuzzy matching, themes and VS Code theme import, text editing operations, Myers diff, workspace file system and search, symbols, diagnostics, settings, the built-in shell, git reader. Foundation only. |
+| `TideSSH` | `Packages/TideSSH` | SSH terminal sessions on Apple's swift-nio-ssh, OpenSSH known_hosts checking, OpenSSH key import. |
+| Terminal | `App/Sources/Terminal` | The `TerminalEngine` seam and SwiftTerm behind it. A terminal pairs an engine with a `TerminalConnection` (TideCore): the built-in shell or an SSH session. |
 | Editor | `App/Sources/Editor` | `UITextView` on TextKit 1, a layout manager that draws decorations, the gutter, minimap and keyboard bar. Each editor attaches its own layout manager to the document's shared text storage, so split views of one file stay in sync. |
 | Workbench | `App/Sources/Model`, `App/Sources/Views` | Observable workbench state, commands (VS Code ids), Quick Input, and the SwiftUI views. |
 
