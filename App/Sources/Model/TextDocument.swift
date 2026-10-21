@@ -131,9 +131,11 @@ final class TextDocument: Identifiable {
         }
         if insertFinalNewline, !text.isEmpty, !text.hasSuffix("\n") { text += format.lineEnding.rawValue }
         if text != storage.string { replaceText(with: text) }
+        let writtenVersion = version
         try await fileSystem.write(path, data: TextFileCodec.encode(text, format: format))
         savedText = text
-        isDirty = false
+        // Edits typed while the write was in flight are still unsaved.
+        isDirty = version != writtenVersion && storage.string != text
         hasConflict = false
     }
 
