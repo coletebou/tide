@@ -1,5 +1,6 @@
 import SwiftUI
 import TideCore
+import TideSSH
 
 /// The Source Control view: branch, staged and unstaged changes, read from
 /// the workspace's `.git` folder. Tapping a change opens its diff.
@@ -90,20 +91,69 @@ struct SourceControlView: View {
     }
 }
 
-/// The Remote Explorer: SSH hosts, like Termius's host list.
+/// The Remote Explorer: SSH hosts, like Termius's host list, and the key
+/// Tide logs in with.
 struct RemoteExplorerView: View {
     @Bindable var workbench: Workbench
     @Environment(\.theme) private var theme
+    private let ssh = RemoteSSH.shared
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("SSH hosts").font(.system(size: 13, weight: .semibold))
-            Text("Add a host to open its shell in the terminal panel and edit its files over SFTP.")
+            Text("Connect to a host to open its shell in the terminal panel.")
                 .font(.system(size: 12))
                 .foregroundStyle(theme.color("descriptionForeground"))
+            actionButton("Connect to Host...", symbol: "plus", id: "remote-connect") { workbench.run("remote-ssh.connectToHost") }
+            if !ssh.recentHosts.isEmpty {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(ssh.recentHosts, id: \.self) { target in
+                        Button {
+                            workbench.connect(to: target)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "server.rack").font(.system(size: 11))
+                                Text(target.description).font(.system(size: 12)).lineLimit(1)
+                                Spacer()
+                            }
+                            .frame(height: 22)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("remote-host-\(target)")
+                    }
+                }
+            }
+            Rectangle().fill(theme.color("sideBarSectionHeader.border")).frame(height: 1)
+            Text("SSH key").font(.system(size: 13, weight: .semibold))
+            if let key = ssh.key {
+                Text("\(key.typeName) key in the Keychain. Add its public key to ~/.ssh/authorized_keys on each host.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.color("descriptionForeground"))
+                actionButton("Copy Public Key", symbol: "doc.on.doc", id: "remote-copy-key") { workbench.run("remote-ssh.copyPublicKey") }
+            } else {
+                Text("Tide has no key yet. Create one, or import an Ed25519 or ECDSA key from the clipboard. Without a key Tide asks for passwords.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.color("descriptionForeground"))
+                actionButton("Create SSH Key", symbol: "key", id: "remote-create-key") { workbench.run("remote-ssh.createKey") }
+                actionButton("Import from Clipboard", symbol: "doc.on.clipboard", id: "remote-import-key") { workbench.run("remote-ssh.importKey") }
+            }
             Spacer()
         }
         .padding(16)
+    }
+
+    private func actionButton(_ title: String, symbol: String, id: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Label(title, systemImage: symbol)
+                .font(.system(size: 12))
+                .frame(maxWidth: .infinity)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 3).fill(theme.color("button.background")))
+                .foregroundStyle(theme.color("button.foreground"))
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier(id)
     }
 }
 

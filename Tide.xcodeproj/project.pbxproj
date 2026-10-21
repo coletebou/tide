@@ -15,13 +15,14 @@
 		3FDF006679A8B4B0F2CD7AC4 /* SourceControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AAB163303A5AE9B77BB72EC /* SourceControlView.swift */; };
 		455E51664718820053BEEB6B /* SideBarContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0ECE78093A1BC08C2E1252A /* SideBarContainer.swift */; };
 		5534F1055EC129B9F8B62AA5 /* TideUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A40170D0603911D5322AD8 /* TideUITestCase.swift */; };
-		59403A709AC7BCBD0A22D194 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9B43521BF5F307F209BCA1AC /* SwiftTerm */; };
+		59403A709AC7BCBD0A22D194 /* TideSSH in Frameworks */ = {isa = PBXBuildFile; productRef = A235A19A2391ED06B998E4F4 /* TideSSH */; };
 		5F5AA0899DDC523896198544 /* TextDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C05A82531CFDC493DD3218 /* TextDocument.swift */; };
 		66EAE3ACA3B7F4BBF836F870 /* KeyboardBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570A962873A4B332509C898A /* KeyboardBar.swift */; };
 		68D6FD7E448A5AF6AFB323C1 /* CodeLayoutManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = E372B3D9D5710F579DFFA60E /* CodeLayoutManager.swift */; };
 		6CDE60A0EC70AC168B6E80B5 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B3B3E0D2C146D8548D3E1CE4 /* Assets.xcassets */; };
 		6F75B6F3304F5EB0B51CC3E5 /* ExplorerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23DA210F542287F3149CC8A8 /* ExplorerView.swift */; };
 		76F3D546107E714538E3EF10 /* QuickInputView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 38B90D2CB8B6605061C9683E /* QuickInputView.swift */; };
+		8A98F6AF29BC306DD893499F /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9B43521BF5F307F209BCA1AC /* SwiftTerm */; };
 		8D5A05EFCF7DCAD6BB54DE81 /* FileIcons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F380301F147F5DBE2C169EB /* FileIcons.swift */; };
 		90D2330E33020C8B38B95F09 /* SearchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E6C2596106392F2110F5E9E8 /* SearchView.swift */; };
 		9B9883B0355D1974A74AD29D /* WorkbenchView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1FA8F8D3692D9D01374F587 /* WorkbenchView.swift */; };
@@ -30,6 +31,7 @@
 		A34BA620F95DF875FCC02CC9 /* TerminalEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6932084BE6A3B4DCE40C894 /* TerminalEngine.swift */; };
 		A93534D96A291AAE7DFC7505 /* SyntaxHighlighter.swift in Sources */ = {isa = PBXBuildFile; fileRef = F459AB4EAAE37D7E1C61D756 /* SyntaxHighlighter.swift */; };
 		A9BFC7A8E40A570DF1D3B2D9 /* QuickInputModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 66081BAFF39E88471ADBD9EB /* QuickInputModel.swift */; };
+		B2D98870B492FFB181045A50 /* RemoteSSH.swift in Sources */ = {isa = PBXBuildFile; fileRef = 202015DFAEB79D8E1EAFE97C /* RemoteSSH.swift */; };
 		B5241B62207A75724B7347D1 /* SearchModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7C40A9A80E22A75F8B170BAD /* SearchModel.swift */; };
 		C288E0171E8DCE02183D4F48 /* MinimapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 893BAC1869AE54255CD9E1F4 /* MinimapView.swift */; };
 		CDC522715220683C9DB81222 /* Workspace.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4222D9DDFDC3BDCB14C032C /* Workspace.swift */; };
@@ -54,10 +56,12 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		020565D15DD12E41B66CA1DE /* TideSSH */ = {isa = PBXFileReference; lastKnownFileType = folder; name = TideSSH; path = Packages/TideSSH; sourceTree = SOURCE_ROOT; };
 		1419AB577A5C71FFA1A26EDA /* ContentViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentViews.swift; sourceTree = "<group>"; };
 		195063CC3EBCB3D8D1FC5A4D /* PanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PanelView.swift; sourceTree = "<group>"; };
 		1A7B794E9977C7D9825F83C4 /* ThemeSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ThemeSupport.swift; sourceTree = "<group>"; };
 		1AAB163303A5AE9B77BB72EC /* SourceControlView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SourceControlView.swift; sourceTree = "<group>"; };
+		202015DFAEB79D8E1EAFE97C /* RemoteSSH.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteSSH.swift; sourceTree = "<group>"; };
 		21DFD615D53A97F2F388B9E7 /* TideUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideUITests.swift; sourceTree = "<group>"; };
 		23DA210F542287F3149CC8A8 /* ExplorerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExplorerView.swift; sourceTree = "<group>"; };
 		29C05A82531CFDC493DD3218 /* TextDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextDocument.swift; sourceTree = "<group>"; };
@@ -97,7 +101,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				9FF79ED9D02C034D4A29C8CB /* TideCore in Frameworks */,
-				59403A709AC7BCBD0A22D194 /* SwiftTerm in Frameworks */,
+				59403A709AC7BCBD0A22D194 /* TideSSH in Frameworks */,
+				8A98F6AF29BC306DD893499F /* SwiftTerm in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -195,6 +200,7 @@
 			children = (
 				A48CF88D97BE7A20E6617397 /* Commands.swift */,
 				66081BAFF39E88471ADBD9EB /* QuickInputModel.swift */,
+				202015DFAEB79D8E1EAFE97C /* RemoteSSH.swift */,
 				7C40A9A80E22A75F8B170BAD /* SearchModel.swift */,
 				E97B1CF218C3B2CAFE7089BE /* SourceControlModel.swift */,
 				D6F39565FEC05CE3D3E694FC /* TerminalManager.swift */,
@@ -252,6 +258,7 @@
 			isa = PBXGroup;
 			children = (
 				810F1EB7DC5D336FC059C393 /* TideCore */,
+				020565D15DD12E41B66CA1DE /* TideSSH */,
 			);
 			path = Packages;
 			sourceTree = "<group>";
@@ -283,6 +290,7 @@
 			name = Tide;
 			packageProductDependencies = (
 				36834504CA3C59AE53A01917 /* TideCore */,
+				A235A19A2391ED06B998E4F4 /* TideSSH */,
 				9B43521BF5F307F209BCA1AC /* SwiftTerm */,
 			);
 			productName = Tide;
@@ -336,6 +344,7 @@
 			packageReferences = (
 				D5EFC26B3A5AFBFF29186FB5 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
 				E60CCF7BAB7E4CCB216BEEFA /* XCLocalSwiftPackageReference "Packages/TideCore" */,
+				3B7381460BBCB03409F6BD04 /* XCLocalSwiftPackageReference "Packages/TideSSH" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 331C309B022C55E0D06BC47D /* Products */;
@@ -378,6 +387,7 @@
 				CED8208D626693F1C2CFF418 /* PanelView.swift in Sources */,
 				A9BFC7A8E40A570DF1D3B2D9 /* QuickInputModel.swift in Sources */,
 				76F3D546107E714538E3EF10 /* QuickInputView.swift in Sources */,
+				B2D98870B492FFB181045A50 /* RemoteSSH.swift in Sources */,
 				B5241B62207A75724B7347D1 /* SearchModel.swift in Sources */,
 				90D2330E33020C8B38B95F09 /* SearchView.swift in Sources */,
 				455E51664718820053BEEB6B /* SideBarContainer.swift in Sources */,
@@ -654,6 +664,10 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
+		3B7381460BBCB03409F6BD04 /* XCLocalSwiftPackageReference "Packages/TideSSH" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/TideSSH;
+		};
 		E60CCF7BAB7E4CCB216BEEFA /* XCLocalSwiftPackageReference "Packages/TideCore" */ = {
 			isa = XCLocalSwiftPackageReference;
 			relativePath = Packages/TideCore;
@@ -680,6 +694,10 @@
 			isa = XCSwiftPackageProductDependency;
 			package = D5EFC26B3A5AFBFF29186FB5 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
 			productName = SwiftTerm;
+		};
+		A235A19A2391ED06B998E4F4 /* TideSSH */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = TideSSH;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

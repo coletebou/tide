@@ -139,6 +139,11 @@ enum BuiltinCommands {
             workbench.showPanel(.terminal)
             workbench.terminals.activeSession?.showAccessibleBuffer()
         }
+        add("remote-ssh.connectToHost", "Connect to Host...", "Remote-SSH") { $0.showConnectToHost() }
+        add("remote-ssh.forgetHostKey", "Forget Host Key...", "Remote-SSH") { $0.showForgetHostKey() }
+        add("remote-ssh.createKey", "Create SSH Key", "Remote-SSH") { $0.createSSHKey() }
+        add("remote-ssh.copyPublicKey", "Copy Public Key", "Remote-SSH") { $0.copySSHPublicKey() }
+        add("remote-ssh.importKey", "Import SSH Key from Clipboard", "Remote-SSH") { $0.importSSHKey() }
         add("workbench.action.zoomIn", "Zoom In", "View", "⌘=") { $0.adjustFontSize(by: 1) }
         add("workbench.action.zoomOut", "Zoom Out", "View", "⌘-") { $0.adjustFontSize(by: -1) }
         add("workbench.action.zoomReset", "Reset Zoom", "View", "⌘0") { $0.set("editor.fontSize", .number(14)) }

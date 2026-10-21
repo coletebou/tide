@@ -19,6 +19,8 @@ settings:
 packages:
   TideCore:
     path: Packages/TideCore
+  TideSSH:
+    path: Packages/TideSSH
   SwiftTerm:
     url: https://github.com/migueldeicaza/SwiftTerm
     exactVersion: 1.19.0
@@ -34,6 +36,7 @@ targets:
         buildPhase: resources
     dependencies:
       - package: TideCore
+      - package: TideSSH
       - package: SwiftTerm
     info:
       path: App/Info.plist
