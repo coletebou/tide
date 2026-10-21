@@ -152,7 +152,14 @@ final class TextDocument: Identifiable {
 
     /// Re-reads the file if it changed on disk; keeps local edits and flags a conflict instead.
     func refreshFromDisk() async {
-        guard !isUntitled, let data = try? await fileSystem.read(path), let (text, _) = TextFileCodec.decode(data), text != savedText else { return }
+        guard !isUntitled, let data = try? await fileSystem.read(path), let (text, _) = TextFileCodec.decode(data) else { return }
+        fileDidChange(to: text)
+    }
+
+    /// Takes text that was just written to the file from outside this editor:
+    /// shows it, or flags a conflict when there are unsaved edits.
+    func fileDidChange(to text: String) {
+        guard text != savedText else { return }
         if isDirty {
             hasConflict = true
         } else {

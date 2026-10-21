@@ -498,19 +498,24 @@ final class Workbench {
     func set(_ key: String, _ value: SettingValue) {
         var store = settings
         store.set(key, value)
-        settings = store
-        try? store.json().write(to: settingsURL, atomically: true, encoding: .utf8)
-        if let document = documents[.userSettingsJSON], !document.isDirty, workspace.localRoot == Self.userDirectory {
-            document.replaceText(with: store.json())
-        }
-        settingsChanged()
+        writeSettings(store)
     }
 
     func resetSetting(_ key: String) {
         var store = settings
         store.reset(key)
+        writeSettings(store)
+    }
+
+    /// Applies settings changed in the Settings editor or by a command and
+    /// writes `settings.json`. An open settings.json editor shows the new
+    /// text, or flags a conflict if it has unsaved edits, so saving it later
+    /// cannot silently undo the change.
+    private func writeSettings(_ store: SettingsStore) {
         settings = store
-        try? store.json().write(to: settingsURL, atomically: true, encoding: .utf8)
+        let text = store.json()
+        try? text.write(to: settingsURL, atomically: true, encoding: .utf8)
+        documents[.userSettingsJSON]?.fileDidChange(to: text)
         settingsChanged()
     }
 
