@@ -17,9 +17,11 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testCommandPaletteRunsACommand() throws {
         let app = try launchTide()
-        app.press("p", [.command, .shift])
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
         let field = focus(app, app.paletteField, "the Command Palette")
         XCTAssertEqual(field.stringValue, ">")
+        // The list is lazy, so only the rows on screen exist.
+        require(app, "the palette to list the commands") { app.paletteRows.count >= 10 }
         field.typeText("toggle terminal")
         require(app, "View: Toggle Terminal as the top match") { app.paletteRows.firstMatch.label.contains("View: Toggle Terminal") }
         screenshot(app, "command-palette")
@@ -27,7 +29,7 @@ final class TideUITests: TideUITestCase {
         require(app, "the palette to close") { !app.paletteField.exists }
         require(app, "the terminal to open") { app.element("terminal").exists }
 
-        app.press("p", [.command, .shift])
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
         focus(app, app.paletteField, "the Command Palette").typeText("zzqx")
         require(app, "the empty-result message") { app.staticTexts["quick-input-message"].label == "No matching commands" }
         app.pressEscape()
@@ -37,7 +39,7 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testQuickOpenOpensAFileAndGoesToALine() throws {
         let app = try launchTide()
-        app.press("p", .command)
+        press(app, "p", .command, opening: "Quick Open") { app.paletteField.exists }
         let field = focus(app, app.paletteField, "Quick Open")
         field.typeText("Note.swift")
         require(app, "Note.swift as the top match") { app.paletteRows.firstMatch.label.contains("Note.swift") }
@@ -45,7 +47,7 @@ final class TideUITests: TideUITestCase {
         require(app, "a tab for Note.swift") { app.element("tab-Note.swift").exists }
         require(app, "the editor to show Note.swift") { app.editor.stringValue.contains("TODO: support tags and pinning") }
 
-        app.press("g", .control)
+        press(app, "g", .control, opening: "Go to Line") { app.paletteField.exists }
         focus(app, app.paletteField, "Go to Line").typeText("10\n")
         require(app, "the cursor on line 10") { app.statusPosition.label.hasPrefix("Ln 10,") }
         screenshot(app, "quick-open-go-to-line")
@@ -54,14 +56,15 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testTerminalRunsBuiltInCommands() throws {
         let app = try launchTide()
-        app.press("`", .control)
         let terminal = app.element("terminal")
+        press(app, "`", .control, opening: "the terminal") { terminal.exists }
         focus(app, terminal, "the terminal").typeText("code notes/todo.md\n")
         require(app, "`code` to open notes/todo.md") { app.element("tab-todo.md").exists }
 
         focus(app, terminal, "the terminal").typeText("echo tidemarker42 > probe.txt\n")
-        app.press("f", [.command, .shift])
-        focus(app, app.textFields["search-search"], "the Search field").typeText("tidemarker42")
+        let search = app.textFields["search-search"]
+        press(app, "f", [.command, .shift], opening: "the Search view") { search.exists }
+        focus(app, search, "the Search field").typeText("tidemarker42")
         require(app, "Search to find the file the shell wrote") { app.staticTexts["search-summary"].label == "1 result in 1 file" }
         XCTAssertTrue(app.buttons["search-match-probe.txt-0"].exists)
         screenshot(app, "terminal")
@@ -73,8 +76,9 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testSearchFindsTextAcrossTheWorkspace() throws {
         let app = try launchTide()
-        app.press("f", [.command, .shift])
-        focus(app, app.textFields["search-search"], "the Search field").typeText("TODO")
+        let search = app.textFields["search-search"]
+        press(app, "f", [.command, .shift], opening: "the Search view") { search.exists }
+        focus(app, search, "the Search field").typeText("TODO")
         let summary = app.staticTexts["search-summary"]
         require(app, "three matches") { summary.label == "3 results in 3 files" }
 
@@ -93,13 +97,15 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testFindAndReplaceInTheEditor() throws {
         let app = try launchTide()
-        app.press("f", .command)
-        focus(app, app.textFields["find-find"], "the Find field").typeText("Tide")
+        let find = app.textFields["find-find"]
+        press(app, "f", .command, opening: "the Find widget") { find.exists }
+        focus(app, find, "the Find field").typeText("Tide")
         let summary = app.staticTexts["find-summary"]
         require(app, "three matches in README.md") { summary.label.hasSuffix("of 3") }
 
-        app.press("f", [.command, .option])
-        focus(app, app.textFields["find-replace"], "the Replace field").typeText("Tidal")
+        let replace = app.textFields["find-replace"]
+        press(app, "f", [.command, .option], opening: "the Replace field") { replace.exists }
+        focus(app, replace, "the Replace field").typeText("Tidal")
         app.buttons["Replace All"].tap()
         require(app, "every match to be replaced") { summary.label == "No results" }
         XCTAssertTrue(app.editor.stringValue.hasPrefix("# Welcome to Tidal"))
@@ -112,39 +118,39 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testFindNextFromTheEditorKeyboard() throws {
         let app = try launchTide()
-        app.press("f", .command)
-        focus(app, app.textFields["find-find"], "the Find field").typeText("Tide")
+        let find = app.textFields["find-find"]
+        press(app, "f", .command, opening: "the Find widget") { find.exists }
+        focus(app, find, "the Find field").typeText("Tide")
         let summary = app.staticTexts["find-summary"]
         require(app, "three matches in README.md") { summary.label.hasSuffix("of 3") }
 
         focus(app, app.editor, "the editor")
         let before = summary.label
-        app.press("g", .command)
+        app.typeKey("g", modifierFlags: .command)
         require(app, "⌘G to move to another match") { summary.label != before && summary.label.hasSuffix("of 3") }
     }
 
     @MainActor
     func testSavingClearsTheUnsavedChangesMarker() throws {
         let app = try launchTide()
-        app.press("n", .command)
-        require(app, "a new untitled file") { app.element("tab-Untitled-1.txt").exists }
+        press(app, "n", .command, opening: "a new untitled file") { app.element("tab-Untitled-1.txt").exists }
         focus(app, app.editor, "the editor").typeText("hello from tide")
         let close = app.buttons["Close Untitled-1.txt"]
         require(app, "the tab to show unsaved changes") { close.stringValue == "Unsaved changes" }
         screenshot(app, "unsaved")
 
-        app.press("s", .command)
+        app.typeKey("s", modifierFlags: .command)
         require(app, "saving to clear the marker") { close.stringValue.isEmpty }
-        app.press("f", [.command, .shift])
-        focus(app, app.textFields["search-search"], "the Search field").typeText("hello from tide")
+        let search = app.textFields["search-search"]
+        press(app, "f", [.command, .shift], opening: "the Search view") { search.exists }
+        focus(app, search, "the Search field").typeText("hello from tide")
         require(app, "Search to find the saved text on disk") { app.staticTexts["search-summary"].label == "1 result in 1 file" }
     }
 
     @MainActor
     func testSettingsEditorChangesAndResetsASetting() throws {
         let app = try launchTide()
-        app.press(",", .command)
-        require(app, "the Settings tab") { app.element("tab-Settings").exists }
+        press(app, ",", .command, opening: "the Settings editor") { app.element("tab-Settings").exists }
         focus(app, app.textFields["settings-search"], "the settings search").typeText("minimap")
         require(app, "the search to narrow the list") { app.staticTexts["1 Settings"].exists }
 
@@ -163,7 +169,7 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testColorThemePickerAppliesATheme() throws {
         let app = try launchTide()
-        app.press("p", [.command, .shift])
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
         let palette = focus(app, app.paletteField, "the Command Palette")
         palette.typeText("color theme")
         require(app, "Preferences: Color Theme as the top match") { app.paletteRows.firstMatch.label.contains("Preferences: Color Theme") }
@@ -176,7 +182,7 @@ final class TideUITests: TideUITestCase {
         screenshot(app, "monokai")
 
         // Reopened, the picker marks Monokai as the current theme.
-        app.press("p", [.command, .shift])
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
         focus(app, app.paletteField, "the Command Palette").typeText("color theme\n")
         let current = app.paletteRows.matching(NSPredicate(format: "selected == true")).firstMatch
         require(app, "the current theme in the picker") { current.exists }
@@ -187,8 +193,7 @@ final class TideUITests: TideUITestCase {
     @MainActor
     func testSplitEditorShowsTheSameFileTwice() throws {
         let app = try launchTide()
-        app.press("\\", .command)
-        require(app, "a second editor group") { app.editors.count == 2 }
+        press(app, "\\", .command, opening: "a second editor group") { app.editors.count == 2 }
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "tab-README.md").count, 2)
 
         let right = app.editors.element(boundBy: 1)

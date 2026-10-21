@@ -24,24 +24,24 @@ class TideUITestCase: XCTestCase {
         return app
     }
 
-    /// Waits for `condition`; on timeout fails with the accessibility tree and
-    /// a screenshot attached, so a red run on CI explains itself.
+    /// Waits for `condition`, failing with diagnostics on timeout.
     @MainActor
     func require(_ app: XCUIApplication, _ what: String, timeout: TimeInterval = 10, file: StaticString = #filePath, line: UInt = #line, _ condition: () -> Bool) {
-        let deadline = Date().addingTimeInterval(timeout)
-        while !condition() {
-            guard Date() < deadline else {
-                let tree = app.debugDescription
-                let treeAttachment = XCTAttachment(string: tree)
-                treeAttachment.name = "accessibility tree"
-                treeAttachment.lifetime = .keepAlways
-                add(treeAttachment)
-                screenshot(app, "failure")
-                XCTFail("Timed out after \(Int(timeout))s waiting for \(what).\n\(tree)", file: file, line: line)
-                return
-            }
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        if !waitUntil(timeout, condition) {
+            fail(app, "Timed out after \(Int(timeout))s waiting for \(what).", file: file, line: line)
         }
+    }
+
+    /// Presses a shortcut until `opened` holds. Just after launch SwiftUI can
+    /// still have the menu bar's items disabled, so a press can go unanswered;
+    /// it is repeated every 3 seconds, at most four times.
+    @MainActor
+    func press(_ app: XCUIApplication, _ key: String, _ modifiers: XCUIElement.KeyModifierFlags = [], opening what: String, file: StaticString = #filePath, line: UInt = #line, until opened: () -> Bool) {
+        for _ in 0..<4 {
+            app.typeKey(key, modifierFlags: modifiers)
+            if waitUntil(3, opened) { return }
+        }
+        fail(app, "Four presses of the shortcut did not open \(what).", file: file, line: line)
     }
 
     /// Waits for `element` to have keyboard focus, tapping it if focus does
@@ -50,11 +50,7 @@ class TideUITestCase: XCTestCase {
     @discardableResult
     func focus(_ app: XCUIApplication, _ element: XCUIElement, _ name: String, file: StaticString = #filePath, line: UInt = #line) -> XCUIElement {
         require(app, "\(name) to appear", file: file, line: line) { element.exists }
-        let deadline = Date().addingTimeInterval(2)
-        while !element.hasKeyboardFocus, Date() < deadline {
-            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
-        }
-        if !element.hasKeyboardFocus { element.tap() }
+        if !waitUntil(2, { element.hasKeyboardFocus }) { element.tap() }
         require(app, "\(name) to have keyboard focus", file: file, line: line) { element.hasKeyboardFocus }
         return element
     }
@@ -66,6 +62,29 @@ class TideUITestCase: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    @MainActor
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            guard Date() < deadline else { return false }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        return true
+    }
+
+    /// Fails with the accessibility tree in the message and attached, plus a
+    /// screenshot, so a red run on CI explains itself.
+    @MainActor
+    private func fail(_ app: XCUIApplication, _ message: String, file: StaticString, line: UInt) {
+        let tree = app.debugDescription
+        let attachment = XCTAttachment(string: tree)
+        attachment.name = "accessibility tree"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        screenshot(app, "failure")
+        XCTFail("\(message)\n\(tree)", file: file, line: line)
     }
 }
 
@@ -81,10 +100,6 @@ extension XCUIApplication {
     var paletteField: XCUIElement { textFields["quick-input-field"] }
     var paletteRows: XCUIElementQuery { descendants(matching: .any).matching(identifier: "quick-input-item") }
     var statusPosition: XCUIElement { buttons["status-position"] }
-
-    func press(_ key: String, _ modifiers: XCUIElement.KeyModifierFlags = []) {
-        typeKey(key, modifierFlags: modifiers)
-    }
 
     func pressEscape() {
         typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
