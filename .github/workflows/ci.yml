@@ -39,3 +39,59 @@ jobs:
           -destination 'generic/platform=iOS Simulator'
           -skipPackagePluginValidation -skipMacroValidation
           CODE_SIGNING_ALLOWED=NO build
+
+  ui:
+    name: UI tests on an iPad simulator
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate the project
+        run: xcodegen generate
+      - name: Install the Metal toolchain (SwiftTerm's renderer)
+        run: xcodebuild -downloadComponent MetalToolchain || true
+      - name: Boot an iPad simulator
+        id: simulator
+        run: |
+          # The newest iOS runtime's iPad Pro 13-inch, else its first iPad.
+          devices=$(xcrun simctl list devices available --json)
+          pick() {
+            jq -r --arg name "$1" '[.devices | to_entries | sort_by(.key) | reverse[]
+              | select(.key | test("iOS")) | .value[] | select(.name | test($name))] | first | .udid // empty' <<<"$devices"
+          }
+          udid=$(pick '^iPad Pro 13'); [ -n "$udid" ] || udid=$(pick '^iPad')
+          [ -n "$udid" ] || { echo "No iPad simulator on this runner"; xcrun simctl list devices available; exit 1; }
+          xcrun simctl list devices available | grep "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          echo "udid=$udid" >> "$GITHUB_OUTPUT"
+      - name: Run the UI tests
+        run: >
+          xcodebuild test -project Tide.xcodeproj -scheme Tide
+          -destination "id=${{ steps.simulator.outputs.udid }}"
+          -skipPackagePluginValidation -skipMacroValidation
+          -resultBundlePath build/UITests.xcresult
+          CODE_SIGNING_ALLOWED=NO
+      - name: Export the screenshots
+        if: always()
+        run: |
+          mkdir -p build/screenshots
+          if [ -d build/UITests.xcresult ]; then
+            xcrun xcresulttool export attachments --path build/UITests.xcresult --output-path build/screenshots
+          fi
+          ls build/screenshots
+      - name: Upload the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-screenshots
+          path: build/screenshots
+          if-no-files-found: warn
+      - name: Upload the result bundle
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: build/UITests.xcresult
+          if-no-files-found: ignore
