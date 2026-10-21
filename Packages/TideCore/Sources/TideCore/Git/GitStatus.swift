@@ -141,7 +141,10 @@ struct GitStatusCollector {
     private let trustChangeTime: Bool
     private let checkAllStat: Bool
     private let precomposeUnicode: Bool
+    /// `core.autocrlf` is `true` or `input`.
+    private let autoCRLF: Bool
     private let rules: GitIgnoreRules
+    private let attributes: GitAttributes
     /// Directories known to be (or not be) symbolic links, for the leading-path check.
     private var symlinkDirectories: [String: Bool] = [:]
 
@@ -157,7 +160,9 @@ struct GitStatusCollector {
         trustChangeTime = config.bool("core.trustctime") ?? true
         checkAllStat = config.string("core.checkstat")?.lowercased() != "minimal"
         precomposeUnicode = config.bool("core.precomposeunicode") ?? false
+        autoCRLF = config.string("core.autocrlf")?.lowercased() == "input" || config.bool("core.autocrlf") == true
         rules = repository.ignoreRules(config: config, index: index)
+        attributes = repository.attributes(config: config, index: index)
     }
 
     mutating func collect() throws -> [GitStatusEntry] {
@@ -260,16 +265,20 @@ struct GitStatusCollector {
         if stat.isRegularFile, entry.size != 0, entry.size != UInt32(truncatingIfNeeded: stat.size) {
             return .modified
         }
-        return contentID(atPath: entry.path, absolutePath: path, stat: stat) == entry.id ? .unmodified : .modified
+        return contentID(of: entry, absolutePath: path, stat: stat) == entry.id ? .unmodified : .modified
     }
 
-    /// The blob id of the file now on disk, from the hash cache when its metadata is unchanged.
-    private func contentID(atPath relativePath: String, absolutePath: String, stat: GitFileStat) -> GitObjectID? {
-        if let cached = repository.cache.hash(forPath: relativePath, stat: stat) { return cached }
+    /// The blob id git would compute for the file now on disk, after its
+    /// line-ending conversion, from the hash cache when nothing it depends on changed.
+    private func contentID(of entry: GitIndexEntry, absolutePath: String, stat: GitFileStat) -> GitObjectID? {
+        let conversion = stat.isSymlink
+            ? GitTextConversion.none
+            : GitTextConversion(attributes.states(forFile: entry.path), autoCRLF: autoCRLF, indexBlob: entry.id)
+        if let cached = repository.cache.hash(forPath: entry.path, stat: stat, conversion: conversion) { return cached }
         let id = stat.isSymlink
             ? GitWorkTreeIO.hashSymlink(atPath: absolutePath)
-            : GitWorkTreeIO.hashFile(atPath: absolutePath)
-        if let id { repository.cache.storeHash(id, forPath: relativePath, stat: stat) }
+            : GitWorkTreeIO.hashFile(atPath: absolutePath, converting: conversion) { try? repository.blob($0) }
+        if let id { repository.cache.storeHash(id, forPath: entry.path, stat: stat, conversion: conversion) }
         return id
     }
 

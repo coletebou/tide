@@ -254,6 +254,49 @@ struct GitStatusTests {
         #expect(try sandbox.swiftStatus(autoCRLF).isEmpty)
     }
 
+    /// Attribute lookup agrees with `git check-attr --all`: precedence between
+    /// files and between lines, macros and where they may be defined, `!name`,
+    /// quoted and folder patterns, and lines git rejects.
+    @Test func attributesMatchCheckAttr() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        try sandbox.write("""
+            [attr]mine text eol=crlf -diff
+            *.txt text
+            *.txt -text eol=lf
+            "with space.md" mine
+            docs/** linguist-documentation
+            *.bin binary
+            *.both binary text
+            *.inv text in/valid
+            build/ text
+            *.dat !text crlf=input
+
+            """, to: ".gitattributes", in: repository)
+        try sandbox.write("*.txt text\n[attr]nested text\n*.md -mine\n", to: "docs/.gitattributes", in: repository)
+        try sandbox.write("special.txt -eol\n", to: ".git/info/attributes", in: repository)
+        let paths = ["a.txt", "with space.md", "docs/guide.md", "docs/notes.txt", "x.bin", "y.both", "z.inv", "special.txt", "build/out.txt", "q.dat"]
+        let output = String(decoding: try sandbox.gitData(["check-attr", "--all", "--"] + paths, in: repository), as: UTF8.self)
+        let theirs = Set(output.split(separator: "\n").map(String.init))
+
+        let opened = try GitRepository.opened(repository)
+        let attributes = opened.attributes(config: opened.config(), index: try opened.index())
+        var ours = Set<String>()
+        for path in paths {
+            for (name, state) in attributes.states(forFile: path) {
+                switch state {
+                case .set: ours.insert("\(path): \(name): set")
+                case .unset: ours.insert("\(path): \(name): unset")
+                case .value(let value): ours.insert("\(path): \(name): \(value)")
+                case .unspecified: break
+                }
+            }
+        }
+        #expect(ours == theirs)
+        #expect(theirs.contains("with space.md: eol: crlf"))
+        #expect(theirs.contains("y.both: text: set"))
+    }
+
     /// Moves modification times into the past, so status must read the files.
     static func touch(_ paths: [String], in repository: URL) throws {
         let past = Date().addingTimeInterval(-3600)

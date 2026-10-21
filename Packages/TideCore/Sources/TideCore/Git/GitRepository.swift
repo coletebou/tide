@@ -10,9 +10,13 @@ import Foundation
 /// repository. All methods are synchronous and safe to call from a background
 /// task; copies share an internal object cache.
 ///
+/// Status hashes work-tree files after git's built-in end-of-line conversion
+/// (the `text`, `eol` and `crlf` attributes and `core.autocrlf`).
+///
 /// Not supported: SHA-256 repositories, the reftable reference backend,
-/// rename detection, and clean/smudge filters or end-of-line conversion
-/// (`.gitattributes`), so work-tree files are compared byte for byte.
+/// rename detection, and the other `.gitattributes` conversions (clean and
+/// smudge filters, `ident`, `working-tree-encoding`), so files using those
+/// are compared as they are on disk.
 public struct GitRepository: Sendable {
     /// The root of the checked-out files.
     public let workTree: URL
@@ -378,16 +382,7 @@ public struct GitRepository: Sendable {
     }
 
     func ignoreRules(config: GitConfig, index: GitIndex?) -> GitIgnoreRules {
-        var excludesFile: URL?
-        if let path = config.string("core.excludesfile"), !path.isEmpty {
-            if path.hasPrefix("~/") {
-                excludesFile = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(String(path.dropFirst(2)))
-            } else if path.hasPrefix("/") {
-                excludesFile = URL(fileURLWithPath: path)
-            } else {
-                excludesFile = workTree.appendingPathComponent(path)
-            }
-        }
+        let excludesFile = configuredFile(config, "core.excludesfile")
         // A .gitignore missing from a sparse checkout is read from the index, as git does.
         var fallback: (@Sendable (String) -> Data?)?
         if let index {
@@ -408,6 +403,40 @@ public struct GitRepository: Sendable {
             fallbackContent: fallback
         )
     }
+
+    /// The attributes `git status` uses: `.gitattributes` files (from the
+    /// index when one is missing from the work tree), `info/attributes` and
+    /// `core.attributesFile`.
+    func attributes(config: GitConfig, index: GitIndex) -> GitAttributes {
+        // Stage 0, or "ours" in the middle of a merge, like git's read_blob_data_from_index.
+        let indexed = Dictionary(
+            index.entries
+                .filter { ($0.stage == 0 || $0.stage == 2) && ($0.path == ".gitattributes" || $0.path.hasSuffix("/.gitattributes")) }
+                .map { ($0.path, $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var fallback: (@Sendable (String) -> Data?)?
+        if !indexed.isEmpty {
+            let store = objects
+            fallback = { path in indexed[path].flatMap { try? store.read($0).data } }
+        }
+        return GitAttributes(
+            workTree: workTree,
+            infoAttributes: commonDirectory.appendingPathComponent("info/attributes"),
+            attributesFile: configuredFile(config, "core.attributesfile"),
+            ignoreCase: config.bool("core.ignorecase") ?? false,
+            fallbackContent: fallback
+        )
+    }
+
+    /// A file named by a path setting such as `core.excludesFile`: `~/` is the
+    /// home directory, and a relative path starts at the work tree.
+    private func configuredFile(_ config: GitConfig, _ key: String) -> URL? {
+        guard let path = config.string(key), !path.isEmpty else { return nil }
+        if path.hasPrefix("~/") { return URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(String(path.dropFirst(2))) }
+        if path.hasPrefix("/") { return URL(fileURLWithPath: path) }
+        return workTree.appendingPathComponent(path)
+    }
 }
 
 /// A file in a flattened tree.
@@ -420,7 +449,7 @@ struct GitTreeItem: Equatable, Sendable {
 final class GitRepositoryCache: @unchecked Sendable {
     private let lock = NSLock()
     private var tree: (id: GitObjectID, files: [String: GitTreeItem])?
-    private var hashes: [String: (stat: GitFileStat, id: GitObjectID)] = [:]
+    private var hashes: [String: (stat: GitFileStat, conversion: GitTextConversion, id: GitObjectID)] = [:]
     private static let hashLimit = 50_000
 
     /// The flattened HEAD tree changes rarely, so the last one is kept.
@@ -438,22 +467,22 @@ final class GitRepositoryCache: @unchecked Sendable {
         return files
     }
 
-    /// A content hash computed earlier for a file whose metadata has not changed since.
-    func hash(forPath path: String, stat: GitFileStat) -> GitObjectID? {
+    /// A content hash computed earlier for a file whose metadata, and line-ending conversion, have not changed since.
+    func hash(forPath path: String, stat: GitFileStat, conversion: GitTextConversion) -> GitObjectID? {
         lock.lock()
         defer { lock.unlock() }
-        guard let entry = hashes[path], entry.stat == stat else { return nil }
+        guard let entry = hashes[path], entry.stat == stat, entry.conversion == conversion else { return nil }
         return entry.id
     }
 
     /// Remembers a content hash. Files changed within the last two seconds are
     /// not cached, so a second write in the same timestamp tick cannot be missed.
-    func storeHash(_ id: GitObjectID, forPath path: String, stat: GitFileStat) {
+    func storeHash(_ id: GitObjectID, forPath path: String, stat: GitFileStat, conversion: GitTextConversion) {
         let now = UInt32(truncatingIfNeeded: Int(Date().timeIntervalSince1970))
         guard stat.modificationTime.seconds &+ 2 < now, stat.statusChangeTime.seconds &+ 2 < now else { return }
         lock.lock()
         defer { lock.unlock() }
         if hashes.count >= Self.hashLimit { hashes.removeAll(keepingCapacity: true) }
-        hashes[path] = (stat, id)
+        hashes[path] = (stat, conversion, id)
     }
 }

@@ -104,6 +104,30 @@ enum GitWorkTreeIO {
         return GitObjectID(digest: hasher.finalize())
     }
 
+    /// The blob id git computes for a regular file whose content it converts
+    /// first, such as CRLF to LF for a `text` file. Reads the whole file, as git does.
+    static func hashFile(atPath path: String, converting conversion: GitTextConversion, blob: (GitObjectID) -> Data?) -> GitObjectID? {
+        guard conversion != .none else { return hashFile(atPath: path) }
+        let descriptor = open(path, O_RDONLY | O_NOFOLLOW)
+        guard descriptor >= 0 else { return nil }
+        defer { close(descriptor) }
+        var info = stat()
+        guard fstat(descriptor, &info) == 0 else { return nil }
+        var data = Data(count: Int(info.st_size))
+        let complete: Bool = data.withUnsafeMutableBytes { buffer in
+            var total = 0
+            while total < buffer.count {
+                let count = read(descriptor, buffer.baseAddress! + total, buffer.count - total)
+                if count < 0, errno == EINTR { continue }
+                if count <= 0 { return false }
+                total += count
+            }
+            return true
+        }
+        guard complete else { return nil }
+        return GitObjectID.hash(.blob, conversion.normalized(data, blob: blob))
+    }
+
     /// The target of a symbolic link, which git stores as the link's blob.
     static func symlinkTarget(atPath path: String) -> Data? {
         var buffer = [UInt8](repeating: 0, count: Int(PATH_MAX) + 1)
