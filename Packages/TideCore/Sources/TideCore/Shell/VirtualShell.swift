@@ -904,8 +904,10 @@ enum ShellLexer {
                 }
                 if !closed { throw LexError.unterminatedQuote }
             case "\\":
+                // A backslash quotes the next character, so `\*` is not a glob.
                 if index + 1 < characters.count { current.append(characters[index + 1]) }
                 hasWord = true
+                quoted = true
                 index += 2
             case "$":
                 current += expandVariable(at: &index)
