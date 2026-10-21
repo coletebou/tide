@@ -93,9 +93,7 @@ The end-to-end tests in `UITests/` drive the real app on an iPad simulator
 with hardware-keyboard shortcuts: the Command Palette, Quick Open, the
 terminal, Search, find and replace, saving, Settings, themes and the split
 editor. Each launch passes `-uiTesting`, which starts from a fresh copy of the
-sample workspace and default settings (plus any `TIDE_UI_TEST_SETTINGS` JSON).
-Attach a hardware keyboard to the simulator (I/O > Keyboard) before running
-them:
+sample workspace and default settings (plus any `TIDE_UI_TEST_SETTINGS` JSON):
 
 ```sh
 xcodebuild test -project Tide.xcodeproj -scheme Tide \

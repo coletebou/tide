@@ -52,7 +52,7 @@ jobs:
         run: xcodegen generate
       - name: Install the Metal toolchain (SwiftTerm's renderer)
         run: xcodebuild -downloadComponent MetalToolchain || true
-      - name: Boot an iPad simulator with a hardware keyboard
+      - name: Boot an iPad simulator
         id: simulator
         run: |
           # The newest iOS runtime's iPad Pro 13-inch, else its first iPad.
@@ -64,15 +64,9 @@ jobs:
           udid=$(pick '^iPad Pro 13'); [ -n "$udid" ] || udid=$(pick '^iPad')
           [ -n "$udid" ] || { echo "No iPad simulator on this runner"; xcrun simctl list devices available; exit 1; }
           xcrun simctl list devices available | grep "$udid"
-          # Tide is driven from a keyboard, and keys such as Escape exist only
-          # on a hardware one; Simulator attaches it and hides the on-screen one.
-          defaults write com.apple.iphonesimulator ConnectHardwareKeyboard -bool true
-          defaults write com.apple.iphonesimulator DevicePreferences -dict-add "$udid" '<dict><key>ConnectHardwareKeyboard</key><true/></dict>'
-          # Simulator boots the device itself, so its keyboard is attached from
-          # the start; bootstatus only waits (with -b it would race that boot).
-          open -a Simulator --args -CurrentDeviceUDID "$udid"
-          xcrun simctl bootstatus "$udid"
-          sleep 5
+          # No hardware keyboard: XCTest detaches it when a UI-test session
+          # starts, so the tests use menu shortcuts and the on-screen keyboard.
+          xcrun simctl bootstatus "$udid" -b
           echo "udid=$udid" >> "$GITHUB_OUTPUT"
       - name: Run the UI tests
         run: >
