@@ -1,4 +1,3 @@
-import SwiftTerm
 import SwiftUI
 import TideCore
 
@@ -209,12 +208,13 @@ struct TerminalPanelView: View {
     }
 }
 
+/// Hosts a terminal engine's view.
 struct TerminalHost: UIViewRepresentable {
     let session: TerminalSession
 
-    func makeUIView(context: Context) -> TerminalView {
-        session.view
+    func makeUIView(context: Context) -> UIView {
+        session.engine.view
     }
 
-    func updateUIView(_ view: TerminalView, context: Context) {}
+    func updateUIView(_ view: UIView, context: Context) {}
 }
