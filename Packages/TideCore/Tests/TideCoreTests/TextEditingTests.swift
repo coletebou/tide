@@ -129,6 +129,27 @@ struct LineCommandTests {
         #expect(run("a\nb|\nc") { TextEditing.deleteLines(in: $0, selection: $1) } == "a\n|c")
         #expect(run("a\nb|") { TextEditing.deleteLines(in: $0, selection: $1) } == "a|")
     }
+
+    /// Line commands keep each line break as it was, so CRLF text stays CRLF.
+    @Test func lineCommandsKeepCRLFLineBreaks() {
+        #expect(run("a\r\nb|\r\nc") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "a\r\nc\r\nb|")
+        #expect(run("a\r\nb\r\nc|") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "a\r\nc|\r\nb")
+        #expect(run("a\r\nb|\r\nc") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "b|\r\na\r\nc")
+        #expect(run("[a\r\nb]\r\nc") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "c\r\n[a\r\nb]")
+        #expect(run("a\r\nb|\r\nc") { TextEditing.duplicateLines(in: $0, selection: $1) } == "a\r\nb\r\nb|\r\nc")
+        #expect(run("a\r\nb|") { TextEditing.duplicateLines(in: $0, selection: $1) } == "a\r\nb\r\nb|")
+        #expect(run("a\r\nb|\r\nc") { TextEditing.deleteLines(in: $0, selection: $1) } == "a\r\n|c")
+        #expect(run("a\r\nb|") { TextEditing.deleteLines(in: $0, selection: $1) } == "a|")
+        // A blank CRLF line is blank: it is neither indented nor commented.
+        #expect(run("[a\r\n\r\nb]") { TextEditing.indentLines(in: $0, selection: $1) } == "[    a\r\n\r\n    b]")
+        #expect(run("[// a\r\n\r\n// b]") { TextEditing.toggleLineComment(in: $0, selection: $1, language: swift) } == "[a\r\n\r\nb]")
+    }
+
+    @Test func movesLinesPastAnEmptyLastLine() {
+        #expect(run("a\nb|\n") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "a\n\nb|")
+        #expect(run("a\n|") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "|\na")
+        #expect(run("a\n|") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == nil)
+    }
 }
 
 struct BracketMatchingTests {
