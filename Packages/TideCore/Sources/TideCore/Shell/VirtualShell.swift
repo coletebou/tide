@@ -111,8 +111,8 @@ public final class VirtualShell {
             var iterator = stage.makeIterator()
             while let token = iterator.next() {
                 switch token {
-                case .word(let word, let quoted):
-                    words.append(contentsOf: quoted ? [word] : expandGlob(word))
+                case .word(let word, let pattern):
+                    words.append(contentsOf: pattern.map { expandPattern($0, literal: word) } ?? [word])
                 case .op(let op) where op == ">" || op == ">>":
                     if case .word(let target, _)? = iterator.next() {
                         redirect = (target, op == ">>")
@@ -224,7 +224,7 @@ public final class VirtualShell {
         Connect to an SSH host from the Remote Explorer for a full Unix shell.
 
         Commands: \(Self.commands.joined(separator: " "))
-        Operators: | ; && || > >>   Globs: * ?   Variables: $NAME ${NAME} $?
+        Operators: | ; && || > >>   Globs: * ? [abc] {a,b}   Variables: $NAME ${NAME} $?
         Open a file in the editor with: code <file>
 
         """
@@ -721,15 +721,16 @@ public final class VirtualShell {
         return results.sorted()
     }
 
-    /// Expands `*` and `?` in the last path segment against the file system.
-    private func expandGlob(_ word: String) -> [String] {
-        guard word.contains("*") || word.contains("?") else { return [word] }
-        let directoryPart = WorkspacePath.parent(of: word)
-        let pattern = Glob(WorkspacePath.name(of: word))
+    /// Pathname expansion of a word's last path segment (see `ShellPattern`):
+    /// the matching names in that folder, sorted and without hidden files, or
+    /// `literal`, the word without its quotes, when none match, as in sh.
+    private func expandPattern(_ pattern: String, literal: String) -> [String] {
+        let directoryPart = ShellPattern.unescaped(WorkspacePath.parent(of: pattern))
         guard let directory = try? resolve(directoryPart.isEmpty ? "." : directoryPart),
-              let names = try? FileManager.default.contentsOfDirectory(atPath: url(for: directory).path) else { return [word] }
-        let matches = names.filter { !$0.hasPrefix(".") && pattern.matches($0) }.sorted()
-        if matches.isEmpty { return [word] }
+              let names = try? FileManager.default.contentsOfDirectory(atPath: url(for: directory).path) else { return [literal] }
+        let matcher = ShellPattern(WorkspacePath.name(of: pattern))
+        let matches = names.filter { !$0.hasPrefix(".") && matcher.matches($0) }.sorted()
+        if matches.isEmpty { return [literal] }
         return matches.map { directoryPart.isEmpty ? $0 : WorkspacePath.join(directoryPart, $0) }
     }
 
@@ -784,8 +785,11 @@ public final class VirtualShell {
 // MARK: - Lexing
 
 enum ShellToken: Equatable {
-    /// A word, and whether any part was quoted (quoted words are not globbed).
-    case word(String, quoted: Bool)
+    /// A word after quote removal. `pattern` is set when an unquoted `*`, `?`
+    /// or `[` makes the word a pathname pattern: the same text with each
+    /// quoted or escaped pattern character escaped by a backslash, so that,
+    /// as in sh, only the unquoted characters act as wildcards.
+    case word(String, pattern: String?)
     case op(String)
 }
 
@@ -794,6 +798,9 @@ enum ShellLexer {
         case unterminatedQuote
         var description: String { "unterminated quote" }
     }
+
+    /// Characters with a meaning in a pathname pattern, escaped when quoted.
+    private static let patternCharacters: Set<Character> = ["*", "?", "[", "]", "{", "}", ",", "\\"]
 
     /// Splits a command line at `;`, `&&` and `||` outside quotes. Each entry
     /// carries the separator that follows it (`;` for the last one).
@@ -846,16 +853,39 @@ enum ShellLexer {
     static func tokenize(_ line: String, environment: [String: String], lastExitCode: Int32) throws -> [ShellToken] {
         var tokens: [ShellToken] = []
         var current = ""
-        var quoted = false
+        // The word as a pathname pattern, and whether an unquoted wildcard makes it one.
+        var pattern = ""
+        var isPattern = false
         var hasWord = false
         let characters = Array(line)
         var index = 0
 
         func flush() {
-            if hasWord { tokens.append(.word(current, quoted: quoted)) }
+            if hasWord { tokens.append(.word(current, pattern: isPattern ? pattern : nil)) }
             current = ""
-            quoted = false
+            pattern = ""
+            isPattern = false
             hasWord = false
+        }
+
+        /// Unquoted text, whose `*`, `?`, `[` and braces act as a pattern.
+        func appendUnquoted(_ text: String) {
+            current += text
+            for character in text {
+                // A backslash here comes from a variable's value and stays literal.
+                if character == "\\" { pattern.append("\\") }
+                pattern.append(character)
+                if character == "*" || character == "?" || character == "[" { isPattern = true }
+            }
+        }
+
+        /// Quoted or escaped text, which only matches itself.
+        func appendQuoted(_ text: String) {
+            current += text
+            for character in text {
+                if patternCharacters.contains(character) { pattern.append("\\") }
+                pattern.append(character)
+            }
         }
 
         func expandVariable(at position: inout Int) -> String {
@@ -887,37 +917,34 @@ enum ShellLexer {
                 index += 1
             case "'":
                 guard let close = characters[(index + 1)...].firstIndex(of: "'") else { throw LexError.unterminatedQuote }
-                current += String(characters[(index + 1)..<close])
-                quoted = true
+                appendQuoted(String(characters[(index + 1)..<close]))
                 hasWord = true
                 index = close + 1
             case "\"":
                 index += 1
                 hasWord = true
-                quoted = true
                 var closed = false
                 while index < characters.count {
                     let inner = characters[index]
                     if inner == "\"" { closed = true; index += 1; break }
                     if inner == "\\", index + 1 < characters.count, "\"\\$`".contains(characters[index + 1]) {
-                        current.append(characters[index + 1])
+                        appendQuoted(String(characters[index + 1]))
                         index += 2
                     } else if inner == "$" {
-                        current += expandVariable(at: &index)
+                        appendQuoted(expandVariable(at: &index))
                     } else {
-                        current.append(inner)
+                        appendQuoted(String(inner))
                         index += 1
                     }
                 }
                 if !closed { throw LexError.unterminatedQuote }
             case "\\":
-                // A backslash quotes the next character, so `\*` is not a glob.
-                if index + 1 < characters.count { current.append(characters[index + 1]) }
+                // A backslash quotes only the next character: `\*` is literal, the rest of the word is not.
+                if index + 1 < characters.count { appendQuoted(String(characters[index + 1])) }
                 hasWord = true
-                quoted = true
                 index += 2
             case "$":
-                current += expandVariable(at: &index)
+                appendUnquoted(expandVariable(at: &index))
                 hasWord = true
             case ";":
                 flush()
@@ -946,17 +973,191 @@ enum ShellLexer {
                     index += 1
                 }
             case "~" where !hasWord && (index + 1 == characters.count || characters[index + 1] == "/" || characters[index + 1] == " "):
-                current += "/"
+                appendUnquoted("/")
                 hasWord = true
                 index += 1
                 if index < characters.count, characters[index] == "/" { index += 1 }
             default:
-                current.append(character)
+                appendUnquoted(String(character))
                 hasWord = true
                 index += 1
             }
         }
         flush()
         return tokens
+    }
+}
+
+/// A pathname pattern for one path segment, as the lexer builds it: `*`, `?`
+/// and `[...]` as in sh (`!` or `^` negates a set, `a-z` is a range, and a
+/// `[` that never closes is an ordinary character), a backslash escaping the
+/// next character, and `{a,b}` alternatives. Characters compare as Swift
+/// characters, so `?` matches one `é`.
+struct ShellPattern {
+    private enum Token {
+        case literal(Character)
+        case anyCharacter
+        case anyRun
+        case set([ClosedRange<Character>], negated: Bool)
+
+        func matches(_ character: Character) -> Bool {
+            switch self {
+            case .literal(let literal): return literal == character
+            case .anyCharacter: return true
+            case .anyRun: return false
+            case .set(let ranges, let negated): return ranges.contains(where: { $0.contains(character) }) != negated
+            }
+        }
+    }
+
+    /// The tokens of each `{a,b}` alternative.
+    private let tokenLists: [[Token]]
+
+    init(_ pattern: String) {
+        tokenLists = Self.alternatives(pattern).map(Self.compile)
+    }
+
+    func matches(_ name: String) -> Bool {
+        let characters = Array(name)
+        return tokenLists.contains { Self.match($0, characters) }
+    }
+
+    private static func compile(_ pattern: String) -> [Token] {
+        let characters = Array(pattern)
+        var tokens: [Token] = []
+        var index = 0
+        while index < characters.count {
+            switch characters[index] {
+            case "\\" where index + 1 < characters.count:
+                tokens.append(.literal(characters[index + 1]))
+                index += 1
+            case "*":
+                tokens.append(.anyRun)
+            case "?":
+                tokens.append(.anyCharacter)
+            case "[":
+                if let set = compileSet(characters, from: index) {
+                    tokens.append(set.token)
+                    index = set.end - 1
+                } else {
+                    tokens.append(.literal("["))
+                }
+            case let character:
+                tokens.append(.literal(character))
+            }
+            index += 1
+        }
+        return tokens
+    }
+
+    /// The `[...]` set at `start` and the index just after it, or nil when it
+    /// never closes.
+    private static func compileSet(_ characters: [Character], from start: Int) -> (token: Token, end: Int)? {
+        var index = start + 1
+        let negated = index < characters.count && (characters[index] == "!" || characters[index] == "^")
+        if negated { index += 1 }
+        var ranges: [ClosedRange<Character>] = []
+        var isFirst = true
+        // The member at `index`, which a backslash escapes; moves `index` past it.
+        func member() -> Character {
+            if characters[index] == "\\", index + 1 < characters.count { index += 1 }
+            defer { index += 1 }
+            return characters[index]
+        }
+        while index < characters.count {
+            // A `]` right after the `[` (or `[!`) is a member, not the end.
+            if characters[index] == "]", !isFirst { return (.set(ranges, negated: negated), index + 1) }
+            isFirst = false
+            let low = member()
+            if index + 1 < characters.count, characters[index] == "-", characters[index + 1] != "]" {
+                index += 1
+                let high = member()
+                if low <= high { ranges.append(low...high) }
+            } else {
+                ranges.append(low...low)
+            }
+        }
+        return nil
+    }
+
+    /// Wildcard matching that lets the last `*` take more characters whenever the rest fails.
+    private static func match(_ tokens: [Token], _ name: [Character]) -> Bool {
+        var token = 0
+        var position = 0
+        // The token after the last `*`, and the position that `*` has reached.
+        var resume: (token: Int, position: Int)?
+        while position < name.count {
+            if token < tokens.count, case .anyRun = tokens[token] {
+                token += 1
+                resume = (token, position)
+            } else if token < tokens.count, tokens[token].matches(name[position]) {
+                token += 1
+                position += 1
+            } else if let last = resume {
+                resume = (last.token, last.position + 1)
+                token = last.token
+                position = last.position + 1
+            } else {
+                return false
+            }
+        }
+        while token < tokens.count, case .anyRun = tokens[token] { token += 1 }
+        return token == tokens.count
+    }
+
+    /// The text a pattern stands for literally: its escapes removed.
+    static func unescaped(_ pattern: String) -> String {
+        var result = ""
+        var isEscaped = false
+        for character in pattern {
+            if character == "\\", !isEscaped {
+                isEscaped = true
+                continue
+            }
+            result.append(character)
+            isEscaped = false
+        }
+        return result
+    }
+
+    /// The patterns that `{a,b,...}` groups stand for: `*.{js,ts}` gives
+    /// `*.js` and `*.ts`. Escaped braces and commas, and a group without a
+    /// comma, are literal.
+    private static func alternatives(_ pattern: String) -> [String] {
+        let characters = Array(pattern)
+        var depth = 0
+        var open = 0
+        var commas: [Int] = []
+        var index = 0
+        while index < characters.count {
+            switch characters[index] {
+            case "\\":
+                index += 1
+            case "{":
+                if depth == 0 {
+                    open = index
+                    commas = []
+                }
+                depth += 1
+            case "," where depth == 1:
+                commas.append(index)
+            case "}" where depth > 0:
+                depth -= 1
+                guard depth == 0, !commas.isEmpty else { break }
+                let prefix = String(characters[..<open])
+                let suffix = String(characters[(index + 1)...])
+                var choices: [String] = []
+                var start = open + 1
+                for end in commas + [index] {
+                    choices.append(String(characters[start..<end]))
+                    start = end + 1
+                }
+                return choices.flatMap { alternatives(prefix + $0 + suffix) }
+            default:
+                break
+            }
+            index += 1
+        }
+        return [pattern]
     }
 }
