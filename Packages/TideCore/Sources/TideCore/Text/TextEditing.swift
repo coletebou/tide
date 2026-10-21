@@ -308,19 +308,21 @@ public enum TextEditing {
             upper = NSRange(location: line.location, length: lineBreak(of: line, in: text).location - line.location)
             lower = block.range
         } else {
-            let after = NSMaxRange(lineBreak(of: text.lineRange(for: block.range), in: text))
             // A block without a line break after it is already the last line.
-            guard after > NSMaxRange(block.range) else { return nil }
-            let line = text.lineRange(for: NSRange(location: after, length: 0))
+            guard block.lineBreakAfter.length > 0 else { return nil }
+            let line = text.lineRange(for: NSRange(location: NSMaxRange(block.lineBreakAfter), length: 0))
             upper = block.range
             lower = NSRange(location: line.location, length: lineBreak(of: line, in: text).location - line.location)
         }
         let separator = text.substring(with: NSRange(location: NSMaxRange(upper), length: lower.location - NSMaxRange(upper)))
         let distance = (up ? upper.length : lower.length) + (separator as NSString).length
+        // A move keeps the text's length. A selection that ran on to the start
+        // of the next line, moved down onto the last line, stops at the end.
+        let location = min(max(0, selection.location + (up ? -distance : distance)), text.length)
         return TextEdit(
             range: NSRange(location: upper.location, length: NSMaxRange(lower) - upper.location),
             replacement: text.substring(with: lower) + separator + text.substring(with: upper),
-            selection: NSRange(location: selection.location + (up ? -distance : distance), length: selection.length)
+            selection: NSRange(location: location, length: min(selection.length, text.length - location))
         )
     }
 
@@ -328,7 +330,7 @@ public enum TextEditing {
     public static func duplicateLines(in text: NSString, selection: NSRange) -> TextEdit {
         let block = lineBlock(for: selection, in: text)
         // Reuse the block's own line break, or on the last line the one before it.
-        var separator = lineBreak(of: text.lineRange(for: block.range), in: text)
+        var separator = block.lineBreakAfter
         if separator.length == 0, block.range.location > 0 {
             separator = lineBreak(of: text.lineRange(for: NSRange(location: block.range.location - 1, length: 0)), in: text)
         }
@@ -343,8 +345,8 @@ public enum TextEditing {
     /// Deletes the selected lines (⇧⌘K).
     public static func deleteLines(in text: NSString, selection: NSRange) -> TextEdit {
         let block = lineBlock(for: selection, in: text)
-        var range = text.lineRange(for: block.range)
-        if NSMaxRange(range) == NSMaxRange(block.range), range.location > 0 {
+        var range = NSRange(location: block.range.location, length: NSMaxRange(block.lineBreakAfter) - block.range.location)
+        if block.lineBreakAfter.length == 0, range.location > 0 {
             // The last line has no line break of its own, so the one before it goes.
             let previous = lineBreak(of: text.lineRange(for: NSRange(location: range.location - 1, length: 0)), in: text)
             range = NSRange(location: previous.location, length: NSMaxRange(range) - previous.location)
@@ -403,6 +405,11 @@ public enum TextEditing {
     struct LineBlock {
         /// From the start of the first line to the end of the last line's content.
         var range: NSRange
+        /// The line break after the last line, empty when that is the document's
+        /// last line. Taken from the last line itself: when that line is blank,
+        /// `range` ends where it starts, and the lines around `range` would
+        /// leave it out.
+        var lineBreakAfter: NSRange
         /// The lines' contents, without line breaks.
         var lines: [String]
         /// The line break after each line but the last: `\n`, `\r\n` or `\r`.
@@ -445,7 +452,7 @@ public enum TextEditing {
             lineStart = position
         }
         lines.append(text.substring(with: NSRange(location: lineStart, length: NSMaxRange(range) - lineStart)))
-        return LineBlock(range: range, lines: lines, lineBreaks: lineBreaks)
+        return LineBlock(range: range, lineBreakAfter: lineBreak(of: endLine, in: text), lines: lines, lineBreaks: lineBreaks)
     }
 
     static func lineContentEnd(of lineRange: NSRange, in text: NSString) -> Int {
