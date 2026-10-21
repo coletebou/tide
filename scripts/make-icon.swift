@@ -8,7 +8,8 @@ import UniformTypeIdentifiers
 let size = 1024
 let output = CommandLine.arguments.dropFirst().first ?? "AppIcon.png"
 let space = CGColorSpace(name: CGColorSpace.sRGB)!
-let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+// No alpha channel: App Store Connect rejects app icons that have one, even fully opaque.
+let context = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0, space: space, bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)!
 let s = CGFloat(size)
 
 func color(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
