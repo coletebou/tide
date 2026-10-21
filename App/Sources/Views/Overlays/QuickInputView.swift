@@ -17,7 +17,7 @@ struct QuickInputView: View {
                     .padding(.vertical, 6)
                     .background(theme.color("quickInputTitle.background"))
             }
-            PaletteTextField(text: $model.text, placeholder: model.placeholder, theme: theme, onUp: { model.moveSelection(by: -1) }, onDown: { model.moveSelection(by: 1) }, onSubmit: { model.acceptSelected() }, onCancel: { model.cancel() })
+            PaletteTextField(text: $model.text, placeholder: model.placeholder, isSecure: model.pickList?.isSecure ?? false, theme: theme, onUp: { model.moveSelection(by: -1) }, onDown: { model.moveSelection(by: 1) }, onSubmit: { model.acceptSelected() }, onCancel: { model.cancel() })
                 .frame(height: 30)
                 .padding(.horizontal, 6)
                 .background(RoundedRectangle(cornerRadius: 3).fill(theme.color("input.background")))
@@ -120,6 +120,7 @@ struct QuickInputView: View {
 struct PaletteTextField: UIViewRepresentable {
     @Binding var text: String
     let placeholder: String
+    let isSecure: Bool
     let theme: Theme
     let onUp: () -> Void
     let onDown: () -> Void
@@ -144,6 +145,8 @@ struct PaletteTextField: UIViewRepresentable {
     func updateUIView(_ field: KeyedTextField, context: Context) {
         context.coordinator.parent = self
         if field.text != text { field.text = text }
+        // One field serves every input, so secure entry follows the current one.
+        if field.isSecureTextEntry != isSecure { field.isSecureTextEntry = isSecure }
         field.textColor = theme.uiColor("input.foreground")
         field.attributedPlaceholder = NSAttributedString(string: placeholder, attributes: [.foregroundColor: theme.uiColor("input.placeholderForeground")])
         field.keyboardAppearance = theme.kind.isDark ? .dark : .light

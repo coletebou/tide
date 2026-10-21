@@ -40,6 +40,11 @@ final class QuickInputModel {
         var onCancel: (() -> Void)?
         /// For free-text prompts ("New File..."): called with the typed text on Enter.
         var onSubmitText: ((String) -> Void)?
+        /// Shows the typed text as dots, for passwords.
+        var isSecure = false
+        /// Turns the typed text into a first row, such as Remote-SSH's
+        /// "user@host", so a new entry wins over a list item it resembles.
+        var textItem: ((String) -> QuickInputItem?)?
     }
 
     var text: String { didSet { refresh() } }
@@ -51,6 +56,8 @@ final class QuickInputModel {
     let pickList: PickList?
 
     @ObservationIgnored private weak var workbench: Workbench?
+    /// Set once the input is accepted or cancelled, so it is answered once.
+    @ObservationIgnored private var isFinished = false
 
     init(workbench: Workbench, text: String = "", pickList: PickList? = nil) {
         self.workbench = workbench
@@ -69,6 +76,7 @@ final class QuickInputModel {
     func acceptSelected() {
         guard let workbench else { return }
         if let pickList, let onSubmitText = pickList.onSubmitText {
+            isFinished = true
             workbench.quickInput = nil
             onSubmitText(text)
             return
@@ -78,13 +86,22 @@ final class QuickInputModel {
             return
         }
         guard let item = selectedItem else { return }
+        isFinished = true
         workbench.quickInput = nil
         item.accept()
     }
 
     func cancel() {
-        pickList?.onCancel?()
+        dismiss()
         workbench?.quickInput = nil
+    }
+
+    /// Cancels the input without closing it, when another input replaces it,
+    /// so a prompt that someone is waiting on always gets its answer.
+    func dismiss() {
+        guard !isFinished else { return }
+        isFinished = true
+        pickList?.onCancel?()
     }
 
     private func focusChanged() {
@@ -99,7 +116,8 @@ final class QuickInputModel {
         if let pickList {
             title = pickList.title
             placeholder = pickList.placeholder
-            items = pickList.onSubmitText != nil ? [] : filter(pickList.items, by: text)
+            let typed = pickList.textItem?(text).map { [$0] } ?? []
+            items = typed + (pickList.onSubmitText != nil ? [] : filter(pickList.items, by: text))
             selectedIndex = max(0, items.firstIndex(where: \.isPicked) ?? 0)
             return
         }
@@ -322,11 +340,17 @@ extension Workbench {
     }
 
     func showQuickInput(prefix: String) {
-        quickInput = QuickInputModel(workbench: self, text: prefix)
+        present(QuickInputModel(workbench: self, text: prefix))
     }
 
     func showPick(_ pickList: QuickInputModel.PickList) {
-        quickInput = QuickInputModel(workbench: self, pickList: pickList)
+        present(QuickInputModel(workbench: self, pickList: pickList))
+    }
+
+    /// Shows an input in place of the one open, which counts as cancelled.
+    func present(_ model: QuickInputModel) {
+        quickInput?.dismiss()
+        quickInput = model
     }
 
     func showThemePicker() {
@@ -425,6 +449,6 @@ extension Workbench {
                 }
             }
         }))
-        quickInput = model
+        present(model)
     }
 }
