@@ -48,6 +48,12 @@ final class SourceControlModel {
         guard let root = workbench?.workspace.localRoot else { return nil }
         return await Task.detached(priority: .utility) { GitSnapshot.headContent(root: root, path: path) }.value
     }
+
+    /// The file's staged text, for diffs.
+    func indexContent(of path: String) async -> String? {
+        guard let root = workbench?.workspace.localRoot else { return nil }
+        return await Task.detached(priority: .utility) { GitSnapshot.indexContent(root: root, path: path) }.value
+    }
 }
 
 extension Workbench {
@@ -93,6 +99,13 @@ nonisolated struct GitSnapshot: Sendable {
         guard let repository = GitRepository.discover(from: root) else { return nil }
         let prefix = relativePrefix(root: root, workTree: repository.workTree)
         guard let data = repository.contentOfFileInHEAD(path: prefix + path) else { return nil }
+        return TextFileCodec.decode(data)?.text
+    }
+
+    static func indexContent(root: URL, path: String) -> String? {
+        guard let repository = GitRepository.discover(from: root) else { return nil }
+        let prefix = relativePrefix(root: root, workTree: repository.workTree)
+        guard let data = repository.contentOfFileInIndex(path: prefix + path) else { return nil }
         return TextFileCodec.decode(data)?.text
     }
 

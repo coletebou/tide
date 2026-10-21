@@ -398,10 +398,12 @@ enum MarkdownBlock {
     }
 }
 
-/// Unified working-tree diff against HEAD (from the Source Control view).
+/// Unified diff of a change in the Source Control view: HEAD against the
+/// index for a staged change, the index against the working tree otherwise.
 struct DiffView: View {
     @Bindable var workbench: Workbench
     let path: String
+    let staged: Bool
     @Environment(\.theme) private var theme
     @State private var rows: [(kind: Character, old: Int?, new: Int?, text: String)] = []
 
@@ -425,7 +427,15 @@ struct DiffView: View {
             .padding(.vertical, 8)
         }
         .task {
-            let head = await workbench.scm.headContent(of: path) ?? ""
+            let index = await workbench.scm.indexContent(of: path)
+            if staged {
+                let head = await workbench.scm.headContent(of: path) ?? ""
+                rows = Self.rows(old: head, new: index ?? "")
+                return
+            }
+            // A conflicted file has no staged version; compare it with HEAD.
+            var base = index
+            if base == nil { base = await workbench.scm.headContent(of: path) }
             let current: String
             if let document = workbench.document(for: path) {
                 current = document.text
@@ -434,7 +444,7 @@ struct DiffView: View {
             } else {
                 current = ""
             }
-            rows = Self.rows(old: head, new: current)
+            rows = Self.rows(old: base ?? "", new: current)
         }
     }
 

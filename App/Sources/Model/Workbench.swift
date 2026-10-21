@@ -56,7 +56,9 @@ enum EditorContent: Hashable, Codable {
     case welcome
     case settings
     case markdownPreview(String)
-    case diff(String)
+    /// A Source Control change: HEAD against the index when staged, the
+    /// index against the working tree otherwise.
+    case diff(String, staged: Bool)
     case keyboardShortcuts
 
     var filePath: String? {

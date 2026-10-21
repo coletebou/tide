@@ -55,12 +55,11 @@ struct SourceControlView: View {
 
     private func row(_ change: SourceControlModel.Change) -> some View {
         Button {
-            if change.kind == .deleted {
-                workbench.open(.diff(change.path))
-            } else if change.kind == .untracked || change.kind == .added {
+            // Untracked and intent-to-add files have nothing to compare with yet.
+            if change.kind == .untracked || (change.kind == .added && !change.staged) {
                 Task { await workbench.open(change.path, preview: true) }
             } else {
-                workbench.open(.diff(change.path))
+                workbench.open(.diff(change.path, staged: change.staged))
             }
         } label: {
             HStack(spacing: 6) {
@@ -77,7 +76,7 @@ struct SourceControlView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityIdentifier("scm-change-\(change.path)")
+        .accessibilityIdentifier("scm-change-\(change.id)")
     }
 
     private func color(_ kind: SourceControlModel.ChangeKind) -> Color {

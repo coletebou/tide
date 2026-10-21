@@ -67,8 +67,8 @@ struct EditorGroupView: View {
             SettingsEditorView(workbench: workbench)
         case .markdownPreview(let path):
             MarkdownPreview(workbench: workbench, path: path)
-        case .diff(let path):
-            DiffView(workbench: workbench, path: path)
+        case .diff(let path, let staged):
+            DiffView(workbench: workbench, path: path, staged: staged)
         case .keyboardShortcuts:
             KeyboardShortcutsView(workbench: workbench)
         }
