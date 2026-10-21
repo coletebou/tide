@@ -1,0 +1,11 @@
+# Sample configuration
+name: tide-sample
+version: 0.1.0
+features:
+  minimap: true
+  stickyScroll: true
+  theme: "Dark 2026"
+servers:
+  - host: example.com
+    port: 22
+    user: deploy

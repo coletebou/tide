@@ -1,0 +1,5 @@
+{
+    // Workspace settings use the same keys as VS Code.
+    "editor.tabSize": 4,
+    "files.trimTrailingWhitespace": true,
+}

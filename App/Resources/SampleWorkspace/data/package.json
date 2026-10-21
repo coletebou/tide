@@ -1,0 +1,12 @@
+{
+  "name": "tide-sample",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p .",
+    "serve": "go run ./server"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.0"
+  }
+}

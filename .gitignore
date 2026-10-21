@@ -1,0 +1,14 @@
+# Build products
+.build/
+build/
+DerivedData/
+*.xcresult
+# Xcode user state
+xcuserdata/
+*.xcuserstate
+# SwiftPM
+.swiftpm/
+Packages/TideCore/.build/
+# Local agent settings (machine-specific)
+.claude/settings.local.json
+.DS_Store

@@ -1,0 +1,18 @@
+:root {
+  --accent: #2dd4bf;
+  --radius: 12px;
+}
+
+.card {
+  max-width: 480px;
+  margin: 4rem auto;
+  padding: 24px 32px;
+  border-radius: var(--radius);
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  color: #e2e8f0;
+}
+
+button:hover {
+  background-color: var(--accent) !important;
+  transform: translateY(-1px);
+}
