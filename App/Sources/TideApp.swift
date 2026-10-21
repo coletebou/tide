@@ -246,6 +246,7 @@ struct TideCommands: Commands {
         CommandMenu("Terminal") {
             item("New Terminal", "workbench.action.terminal.new", "`", [.control, .shift])
             item("Clear Terminal", "workbench.action.terminal.clear")
+            item("Focus Accessible Buffer", "workbench.action.terminal.focusAccessibleBuffer")
         }
         CommandGroup(replacing: .help) {
             item("Welcome", "workbench.action.openWelcome")

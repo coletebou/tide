@@ -176,9 +176,13 @@ struct TerminalPanelView: View {
     var body: some View {
         HStack(spacing: 0) {
             if let session = terminals.activeSession {
-                TerminalHost(session: session)
-                    .id(session.id)
-                    .padding(.leading, 8)
+                if session.showsAccessibleBuffer {
+                    TerminalAccessibleBuffer(session: session)
+                } else {
+                    TerminalHost(session: session)
+                        .id(session.id)
+                        .padding(.leading, 8)
+                }
             } else {
                 Text("No terminal").foregroundStyle(theme.color("descriptionForeground")).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -217,4 +221,41 @@ struct TerminalHost: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UIView, context: Context) {}
+}
+
+/// The terminal's text as a read-only view, VS Code's accessible buffer:
+/// VoiceOver reads it as text, and a finger can select and copy from it.
+struct TerminalAccessibleBuffer: View {
+    let session: TerminalSession
+    @Environment(\.theme) private var theme
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("Terminal Buffer").font(.system(size: 11, weight: .semibold))
+                Spacer()
+                Button("Close") { session.hideAccessibleBuffer() }
+                    .font(.system(size: 12))
+                    .accessibilityIdentifier("terminal-buffer-close")
+            }
+            .foregroundStyle(theme.color("panelTitle.activeForeground"))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    Text(session.bufferText)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(theme.color("terminal.foreground"))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
+                        .accessibilityIdentifier("terminal-buffer")
+                    Color.clear.frame(height: 1).id("end")
+                }
+                .onAppear { proxy.scrollTo("end", anchor: .bottom) }
+                .onChange(of: session.bufferText) { proxy.scrollTo("end", anchor: .bottom) }
+            }
+        }
+        .background(theme.color("terminal.background"))
+    }
 }

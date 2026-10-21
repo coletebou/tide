@@ -10,6 +10,9 @@ import UIKit
 final class TerminalSession: Identifiable {
     let id = UUID()
     var title: String
+    /// Shows the terminal's text as a read-only view instead of the terminal.
+    private(set) var showsAccessibleBuffer = false
+    private(set) var bufferText = ""
     @ObservationIgnored let engine: any TerminalEngine
     @ObservationIgnored private let connection: any TerminalConnection
     @ObservationIgnored weak var workbench: Workbench?
@@ -38,12 +41,24 @@ final class TerminalSession: Identifiable {
     func clear() {
         engine.clear()
         connection.redrawAfterClear()
+        if showsAccessibleBuffer { bufferText = engine.text() }
     }
 
     /// Ends the shell, as closing its terminal does.
     func terminate() {
         ended = true
         connection.close()
+    }
+
+    /// VS Code's accessible buffer: the terminal's text, which VoiceOver can
+    /// read and a finger can select and copy.
+    func showAccessibleBuffer() {
+        bufferText = engine.text()
+        showsAccessibleBuffer = true
+    }
+
+    func hideAccessibleBuffer() {
+        showsAccessibleBuffer = false
     }
 
     private func input(_ bytes: [UInt8]) {
@@ -58,6 +73,7 @@ final class TerminalSession: Identifiable {
         switch event {
         case .output(let bytes):
             engine.feed(bytes)
+            if showsAccessibleBuffer { bufferText = engine.text() }
         case .title(let title):
             self.title = title
         case .openFiles(let paths):

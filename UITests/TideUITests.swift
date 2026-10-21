@@ -77,6 +77,25 @@ final class TideUITests: TideUITestCase {
         require(app, "exit to close the last terminal") { app.staticTexts["No terminal"].exists }
     }
 
+    /// The accessible buffer shows the terminal's text: here the output of a
+    /// command, which the typed line does not contain.
+    @MainActor
+    func testAccessibleBufferShowsTheTerminalText() throws {
+        let app = try launchTide()
+        let terminal = app.element("terminal")
+        press(app, "`", .control, opening: "the terminal") { terminal.exists }
+        focus(app, terminal, "the terminal").typeText("echo shell-$USER\n")
+        press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
+        focus(app, app.paletteField, "the Command Palette").typeText("accessible buffer")
+        require(app, "Terminal: Focus Accessible Buffer as the top match") { app.paletteRows.firstMatch.label.contains("Terminal: Focus Accessible Buffer") }
+        app.paletteField.typeText("\n")
+        let buffer = app.staticTexts["terminal-buffer"]
+        require(app, "the buffer to show the command's output") { buffer.label.contains("shell-tide") }
+        screenshot(app, "terminal-buffer")
+        app.buttons["terminal-buffer-close"].tap()
+        require(app, "the terminal to come back") { terminal.exists }
+    }
+
     @MainActor
     func testSearchFindsTextAcrossTheWorkspace() throws {
         let app = try launchTide()

@@ -135,6 +135,10 @@ enum BuiltinCommands {
             workbench.showPanel(.terminal)
         }
         add("workbench.action.terminal.clear", "Clear", "Terminal") { $0.terminals.clearActive() }
+        add("workbench.action.terminal.focusAccessibleBuffer", "Focus Accessible Buffer", "Terminal", enabled: { $0.terminals.activeSession != nil }) { workbench in
+            workbench.showPanel(.terminal)
+            workbench.terminals.activeSession?.showAccessibleBuffer()
+        }
         add("workbench.action.zoomIn", "Zoom In", "View", "⌘=") { $0.adjustFontSize(by: 1) }
         add("workbench.action.zoomOut", "Zoom Out", "View", "⌘-") { $0.adjustFontSize(by: -1) }
         add("workbench.action.zoomReset", "Reset Zoom", "View", "⌘0") { $0.set("editor.fontSize", .number(14)) }
