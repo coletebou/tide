@@ -104,7 +104,6 @@ nonisolated struct GitSnapshot: Sendable {
         case .deleted: .deleted
         case .unmerged: .conflicted
         case .untracked: .untracked
-        default: .modified
         }
     }
 
