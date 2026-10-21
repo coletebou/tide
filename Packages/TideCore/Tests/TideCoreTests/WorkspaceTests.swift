@@ -97,17 +97,18 @@ struct TextFileCodecTests {
         let bom = try #require(TextFileCodec.decode(Data([0xEF, 0xBB, 0xBF]) + Data("hé".utf8)))
         #expect(bom.text == "hé")
         #expect(bom.format.encoding == .utf8BOM)
-        let utf16 = TextFileCodec.encode("hi\n", format: TextFileFormat(encoding: .utf16LE, lineEnding: .lf))
+        let utf16 = try TextFileCodec.encode("hi\n", format: TextFileFormat(encoding: .utf16LE, lineEnding: .lf))
         #expect(TextFileCodec.decode(utf16)?.text == "hi\n")
         #expect(TextFileCodec.decode(Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01])) == nil)
         #expect(TextFileCodec.decode(Data([0xE9, 0x74, 0xE9]))?.format.encoding == .windows1252)
     }
 
-    @Test func roundTripsEveryEncoding() {
+    @Test func roundTripsEveryEncoding() throws {
         for encoding in TextEncoding.allCases {
             let format = TextFileFormat(encoding: encoding, lineEnding: .lf)
             let text = encoding == .windows1252 ? "caf\u{E9}\n" : "caf\u{E9} \u{1F30A}\n"
-            #expect(TextFileCodec.decode(TextFileCodec.encode(text, format: format))?.text == text, "\(encoding)")
+            let data = try TextFileCodec.encode(text, format: format)
+            #expect(TextFileCodec.decode(data)?.text == text, "\(encoding)")
         }
     }
 
@@ -116,7 +117,10 @@ struct TextFileCodecTests {
     @Test func refusesLossyEncoding() throws {
         let format = TextFileFormat(encoding: .windows1252, lineEnding: .lf)
         #expect(try TextFileCodec.encode("caf\u{E9} \u{20AC}\n", format: format) == Data([0x63, 0x61, 0x66, 0xE9, 0x20, 0x80, 0x0A]))
-        #expect(throws: WorkspaceError.self) { try TextFileCodec.encode("done \u{2713}\n", format: format) }
+        #expect(throws: WorkspaceError.unrepresentableCharacter("\u{2713}", .windows1252)) {
+            try TextFileCodec.encode("done \u{2713}\n", format: format)
+        }
+        #expect(WorkspaceError.unrepresentableCharacter("\u{2713}", .windows1252).errorDescription == "'\u{2713}' cannot be saved in Western (Windows 1252).")
     }
 
     @Test func normalizesLineEndings() {

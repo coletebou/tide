@@ -89,18 +89,29 @@ public enum TextFileCodec {
         return nil
     }
 
-    public static func encode(_ text: String, format: TextFileFormat) -> Data {
+    /// Encodes text the way the file is stored. Throws rather than replace a
+    /// character the encoding cannot represent, so saving never loses text.
+    public static func encode(_ text: String, format: TextFileFormat) throws -> Data {
         switch format.encoding {
         case .utf8:
             return Data(text.utf8)
         case .utf8BOM:
             return Data([0xEF, 0xBB, 0xBF]) + Data(text.utf8)
         case .utf16LE:
-            return Data([0xFF, 0xFE]) + (text.data(using: .utf16LittleEndian) ?? Data())
+            return Data([0xFF, 0xFE]) + (try losslessly(text, .utf16LittleEndian, format.encoding))
         case .utf16BE:
-            return Data([0xFE, 0xFF]) + (text.data(using: .utf16BigEndian) ?? Data())
+            return Data([0xFE, 0xFF]) + (try losslessly(text, .utf16BigEndian, format.encoding))
         case .windows1252:
-            return text.data(using: .windowsCP1252, allowLossyConversion: true) ?? Data(text.utf8)
+            return try losslessly(text, .windowsCP1252, format.encoding)
         }
+    }
+
+    private static func losslessly(_ text: String, _ encoding: String.Encoding, _ name: TextEncoding) throws -> Data {
+        if let data = text.data(using: encoding, allowLossyConversion: false) { return data }
+        // A decomposed "é" is the same text as the composed one Windows-1252 has.
+        let composed = text.precomposedStringWithCanonicalMapping
+        if let data = composed.data(using: encoding, allowLossyConversion: false) { return data }
+        let character = composed.first { String($0).data(using: encoding, allowLossyConversion: false) == nil } ?? "\u{FFFD}"
+        throw WorkspaceError.unrepresentableCharacter(character, name)
     }
 }
