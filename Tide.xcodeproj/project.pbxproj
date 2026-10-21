@@ -13,6 +13,7 @@
 		1BF5C112DD2F6CC66BA177D1 /* ThemeSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A7B794E9977C7D9825F83C4 /* ThemeSupport.swift */; };
 		3FDF006679A8B4B0F2CD7AC4 /* SourceControlView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AAB163303A5AE9B77BB72EC /* SourceControlView.swift */; };
 		455E51664718820053BEEB6B /* SideBarContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A0ECE78093A1BC08C2E1252A /* SideBarContainer.swift */; };
+		5534F1055EC129B9F8B62AA5 /* TideUITestCase.swift in Sources */ = {isa = PBXBuildFile; fileRef = 53A40170D0603911D5322AD8 /* TideUITestCase.swift */; };
 		59403A709AC7BCBD0A22D194 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 9B43521BF5F307F209BCA1AC /* SwiftTerm */; };
 		5F5AA0899DDC523896198544 /* TextDocument.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29C05A82531CFDC493DD3218 /* TextDocument.swift */; };
 		66EAE3ACA3B7F4BBF836F870 /* KeyboardBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 570A962873A4B332509C898A /* KeyboardBar.swift */; };
@@ -62,6 +63,7 @@
 		32155C7A880CDA3B7F792BCF /* GutterView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GutterView.swift; sourceTree = "<group>"; };
 		38B90D2CB8B6605061C9683E /* QuickInputView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickInputView.swift; sourceTree = "<group>"; };
 		4EF8CF9BFE2DA98052A7F755 /* Workbench.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Workbench.swift; sourceTree = "<group>"; };
+		53A40170D0603911D5322AD8 /* TideUITestCase.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TideUITestCase.swift; sourceTree = "<group>"; };
 		570A962873A4B332509C898A /* KeyboardBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyboardBar.swift; sourceTree = "<group>"; };
 		5F380301F147F5DBE2C169EB /* FileIcons.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FileIcons.swift; sourceTree = "<group>"; };
 		66081BAFF39E88471ADBD9EB /* QuickInputModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickInputModel.swift; sourceTree = "<group>"; };
@@ -101,6 +103,7 @@
 		0D387B28B44486307B1CD56A /* UITests */ = {
 			isa = PBXGroup;
 			children = (
+				53A40170D0603911D5322AD8 /* TideUITestCase.swift */,
 				21DFD615D53A97F2F388B9E7 /* TideUITests.swift */,
 			);
 			path = UITests;
@@ -381,6 +384,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				5534F1055EC129B9F8B62AA5 /* TideUITestCase.swift in Sources */,
 				D71C2618B40CF2BAF94733CB /* TideUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -427,6 +431,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.coletebou.tide.uitests;
 				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Tide;
 			};
@@ -525,6 +530,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.coletebou.tide.uitests;
 				SDKROOT = iphoneos;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = nonisolated;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_TARGET_NAME = Tide;
 			};

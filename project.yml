@@ -80,6 +80,10 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.coletebou.tide.uitests
         TEST_TARGET_NAME: Tide
         GENERATE_INFOPLIST_FILE: YES
+        # XCTestCase's inherited initializers are nonisolated, so a test case
+        # cannot compile under the app's MainActor default; the tests mark
+        # their UI code @MainActor instead.
+        SWIFT_DEFAULT_ACTOR_ISOLATION: nonisolated
 schemes:
   Tide:
     build:
