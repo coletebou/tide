@@ -123,7 +123,10 @@ public final class SSHShellSession: Sendable {
             .connectTimeout(.seconds(15))
             .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
             .channelInitializer { channel in
-                channel.eventLoop.makeCompletedFuture {
+                // Known from here on, so cancelling can close the channel
+                // while it is still connecting.
+                _ = progress.track(channel)
+                return channel.eventLoop.makeCompletedFuture {
                     let sync = channel.pipeline.syncOperations
                     let ssh = NIOSSHHandler(
                         role: .client(.init(userAuthDelegate: authenticator, serverAuthDelegate: hostKeys)),
@@ -138,9 +141,10 @@ public final class SSHShellSession: Sendable {
         do {
             connection = try await bootstrap.connect(host: target.host, port: target.port).get()
         } catch {
+            if progress.isCancelled { throw CancellationError() }
             throw SSHConnectionError.unreachable(String(describing: error))
         }
-        guard progress.connected(connection) else { throw CancellationError() }
+        guard progress.track(connection) else { throw CancellationError() }
         // A host that takes the connection but never gets to its host key is
         // given up on.
         _ = connection.eventLoop.scheduleTask(in: .milliseconds(Int64(options.handshakeTimeout * 1000))) {
@@ -330,9 +334,9 @@ private final class ConnectProgress: Sendable {
         connection?.close(promise: nil)
     }
 
-    /// Keeps the new connection; false, after closing it, if the attempt was
-    /// cancelled while it was being made.
-    func connected(_ connection: any Channel) -> Bool {
+    /// Keeps the connection's channel; false, after closing it, if the
+    /// attempt was cancelled already.
+    func track(_ connection: any Channel) -> Bool {
         let cancelled = state.withLockedValue { state -> Bool in
             state.connection = connection
             return state.cancelled

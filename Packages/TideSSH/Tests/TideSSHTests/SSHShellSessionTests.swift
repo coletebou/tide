@@ -115,8 +115,9 @@ struct SSHShellSessionTests {
         }
     }
 
-    /// A host that takes the connection and never speaks SSH is given up on.
-    @Test func givesUpOnAHostThatNeverAnswers() async throws {
+    /// A host that takes the connection and never speaks SSH is given up on;
+    /// the time limit makes a missing timeout fail instead of hang.
+    @Test(.timeLimit(.minutes(1))) func givesUpOnAHostThatNeverAnswers() async throws {
         let silent = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).get()
         defer { silent.close(promise: nil) }
         let port = try #require(silent.localAddress?.port)
