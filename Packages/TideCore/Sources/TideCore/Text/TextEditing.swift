@@ -242,7 +242,7 @@ public enum TextEditing {
                 delta += change
                 return result
             }
-            let replacement = newLines.joined(separator: "\n")
+            let replacement = block.joined(newLines)
             return TextEdit(range: block.range, replacement: replacement, selection: adjustedSelection(selection, block: block, firstLineDelta: firstLineDelta, totalDelta: delta, editColumn: minIndent))
         }
         guard let comment = language.blockComment else { return nil }
@@ -273,7 +273,7 @@ public enum TextEditing {
             delta += change
             return indentation.unit + line
         }
-        return TextEdit(range: block.range, replacement: newLines.joined(separator: "\n"), selection: adjustedSelection(selection, block: block, firstLineDelta: firstLineDelta, totalDelta: delta))
+        return TextEdit(range: block.range, replacement: block.joined(newLines), selection: adjustedSelection(selection, block: block, firstLineDelta: firstLineDelta, totalDelta: delta))
     }
 
     /// Removes one unit of indentation from the selected lines (⌘[ or ⇧Tab).
@@ -292,52 +292,62 @@ public enum TextEditing {
             delta -= removed
             return String(line.dropFirst(removed))
         }
-        return TextEdit(range: block.range, replacement: newLines.joined(separator: "\n"), selection: adjustedSelection(selection, block: block, firstLineDelta: firstLineDelta, totalDelta: delta))
+        return TextEdit(range: block.range, replacement: block.joined(newLines), selection: adjustedSelection(selection, block: block, firstLineDelta: firstLineDelta, totalDelta: delta))
     }
 
-    /// Moves the selected lines up or down by one line (⌥↑ / ⌥↓).
+    /// Moves the selected lines up or down by one line (⌥↑ / ⌥↓). The line
+    /// contents trade places and every line break stays where it was, so
+    /// CRLF text keeps its line endings.
     public static func moveLines(up: Bool, in text: NSString, selection: NSRange) -> TextEdit? {
         let block = lineBlock(for: selection, in: text)
-        let all = (text as String).components(separatedBy: "\n")
-        let first = block.firstLine
-        let last = block.firstLine + block.lines.count - 1
-        if up ? first == 0 : last >= all.count - 1 { return nil }
-        let swapIndex = up ? first - 1 : last + 1
-        let neighbor = all[swapIndex]
-        let rangeStart = up ? offsetOfLine(swapIndex, in: all) : block.range.location
-        let moved = block.lines.joined(separator: "\n")
-        let replacement = up ? moved + "\n" + neighbor : neighbor + "\n" + moved
-        let length = (moved as NSString).length + 1 + (neighbor as NSString).length
-        let shift = up ? -((neighbor as NSString).length + 1) : (neighbor as NSString).length + 1
+        let upper: NSRange
+        let lower: NSRange
+        if up {
+            guard block.range.location > 0 else { return nil }
+            let line = text.lineRange(for: NSRange(location: block.range.location - 1, length: 0))
+            upper = NSRange(location: line.location, length: lineBreak(of: line, in: text).location - line.location)
+            lower = block.range
+        } else {
+            let after = NSMaxRange(lineBreak(of: text.lineRange(for: block.range), in: text))
+            // A block without a line break after it is already the last line.
+            guard after > NSMaxRange(block.range) else { return nil }
+            let line = text.lineRange(for: NSRange(location: after, length: 0))
+            upper = block.range
+            lower = NSRange(location: line.location, length: lineBreak(of: line, in: text).location - line.location)
+        }
+        let separator = text.substring(with: NSRange(location: NSMaxRange(upper), length: lower.location - NSMaxRange(upper)))
+        let distance = (up ? upper.length : lower.length) + (separator as NSString).length
         return TextEdit(
-            range: NSRange(location: rangeStart, length: length),
-            replacement: replacement,
-            selection: NSRange(location: selection.location + shift, length: selection.length)
+            range: NSRange(location: upper.location, length: NSMaxRange(lower) - upper.location),
+            replacement: text.substring(with: lower) + separator + text.substring(with: upper),
+            selection: NSRange(location: selection.location + (up ? -distance : distance), length: selection.length)
         )
     }
 
     /// Duplicates the selected lines below (⇧⌥↓) and selects the copy.
     public static func duplicateLines(in text: NSString, selection: NSRange) -> TextEdit {
         let block = lineBlock(for: selection, in: text)
-        let content = block.lines.joined(separator: "\n")
-        let insertion = "\n" + content
-        let shift = (content as NSString).length + 1
+        // Reuse the block's own line break, or on the last line the one before it.
+        var separator = lineBreak(of: text.lineRange(for: block.range), in: text)
+        if separator.length == 0, block.range.location > 0 {
+            separator = lineBreak(of: text.lineRange(for: NSRange(location: block.range.location - 1, length: 0)), in: text)
+        }
+        let insertion = (separator.length > 0 ? text.substring(with: separator) : "\n") + text.substring(with: block.range)
         return TextEdit(
             range: NSRange(location: NSMaxRange(block.range), length: 0),
             replacement: insertion,
-            selection: NSRange(location: selection.location + shift, length: selection.length)
+            selection: NSRange(location: selection.location + (insertion as NSString).length, length: selection.length)
         )
     }
 
     /// Deletes the selected lines (⇧⌘K).
     public static func deleteLines(in text: NSString, selection: NSRange) -> TextEdit {
         let block = lineBlock(for: selection, in: text)
-        var range = block.range
-        if NSMaxRange(range) < text.length {
-            range.length += 1
-        } else if range.location > 0 {
-            range.location -= 1
-            range.length += 1
+        var range = text.lineRange(for: block.range)
+        if NSMaxRange(range) == NSMaxRange(block.range), range.location > 0 {
+            // The last line has no line break of its own, so the one before it goes.
+            let previous = lineBreak(of: text.lineRange(for: NSRange(location: range.location - 1, length: 0)), in: text)
+            range = NSRange(location: previous.location, length: NSMaxRange(range) - previous.location)
         }
         let caret = min(range.location, max(0, text.length - range.length))
         return TextEdit(range: range, replacement: "", selection: NSRange(location: caret, length: 0))
@@ -391,10 +401,20 @@ public enum TextEditing {
     /// The full lines a selection touches. A selection ending at column 0 of a
     /// line does not include that line, matching VS Code.
     struct LineBlock {
+        /// From the start of the first line to the end of the last line's content.
         var range: NSRange
+        /// The lines' contents, without line breaks.
         var lines: [String]
-        var firstLine: Int
+        /// The line break after each line but the last: `\n`, `\r\n` or `\r`.
+        var lineBreaks: [String]
         var contentLength: Int { range.length }
+
+        /// Edited lines joined with the line breaks the block had.
+        func joined(_ lines: [String]) -> String {
+            var result = lines.first ?? ""
+            for (line, lineBreak) in zip(lines.dropFirst(), lineBreaks) { result += lineBreak + line }
+            return result
+        }
     }
 
     static func lineBlock(for selection: NSRange, in text: NSString) -> LineBlock {
@@ -407,9 +427,25 @@ public enum TextEditing {
         let start = startLine.location
         let contentEnd = lineContentEnd(of: endLine, in: text)
         let range = NSRange(location: start, length: max(0, contentEnd - start))
-        let content = text.substring(with: range)
-        let firstLine = (text.substring(to: start) as NSString).components(separatedBy: "\n").count - 1
-        return LineBlock(range: range, lines: content.components(separatedBy: "\n"), firstLine: firstLine)
+        // Split at the line breaks LineIndex knows: LF, CRLF and a lone CR.
+        var lines: [String] = []
+        var lineBreaks: [String] = []
+        var lineStart = start
+        var position = start
+        while position < NSMaxRange(range) {
+            let unit = text.character(at: position)
+            guard unit == 0x0A || unit == 0x0D else {
+                position += 1
+                continue
+            }
+            let isCRLF = unit == 0x0D && position + 1 < NSMaxRange(range) && text.character(at: position + 1) == 0x0A
+            lines.append(text.substring(with: NSRange(location: lineStart, length: position - lineStart)))
+            lineBreaks.append(isCRLF ? "\r\n" : unit == 0x0D ? "\r" : "\n")
+            position += isCRLF ? 2 : 1
+            lineStart = position
+        }
+        lines.append(text.substring(with: NSRange(location: lineStart, length: NSMaxRange(range) - lineStart)))
+        return LineBlock(range: range, lines: lines, lineBreaks: lineBreaks)
     }
 
     static func lineContentEnd(of lineRange: NSRange, in text: NSString) -> Int {
@@ -419,8 +455,10 @@ public enum TextEditing {
         return end
     }
 
-    private static func offsetOfLine(_ line: Int, in lines: [String]) -> Int {
-        lines[0..<line].reduce(0) { $0 + ($1 as NSString).length + 1 }
+    /// The line break that ends `lineRange`, empty for the last line.
+    static func lineBreak(of lineRange: NSRange, in text: NSString) -> NSRange {
+        let contentEnd = lineContentEnd(of: lineRange, in: text)
+        return NSRange(location: contentEnd, length: NSMaxRange(lineRange) - contentEnd)
     }
 
     /// Moves a selection with an edit to its lines. A non-empty selection that
