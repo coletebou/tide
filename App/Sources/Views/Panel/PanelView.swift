@@ -79,44 +79,73 @@ struct ProblemsView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(problems, id: \.content) { entry in
-                        HStack(spacing: 6) {
-                            FileIcon(name: WorkspacePath.name(of: entry.path), size: 12)
-                            Text(WorkspacePath.name(of: entry.path)).font(.system(size: 13))
-                            Text(WorkspacePath.parent(of: entry.path)).font(.system(size: 11)).foregroundStyle(theme.color("descriptionForeground"))
-                            Text("\(entry.diagnostics.count)")
-                                .font(.system(size: 9, weight: .bold))
-                                .padding(.horizontal, 5)
-                                .background(Capsule().fill(theme.color("badge.background")))
-                        }
-                        .padding(.leading, 12)
-                        .frame(height: 22)
-                        ForEach(entry.diagnostics) { diagnostic in
-                            Button {
-                                Task { await workbench.open(entry.content, line: diagnostic.line, column: diagnostic.column) }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: diagnostic.severity == .error ? "xmark.circle.fill" : diagnostic.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
-                                        .foregroundStyle(theme.color(diagnostic.severity == .error ? "editorError.foreground" : diagnostic.severity == .warning ? "editorWarning.foreground" : "editorInfo.foreground"))
-                                        .font(.system(size: 11))
-                                    Text(diagnostic.message).font(.system(size: 13)).lineLimit(1)
-                                    Text("\(diagnostic.source) [Ln \(diagnostic.line + 1), Col \(diagnostic.column + 1)]")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(theme.color("descriptionForeground"))
-                                    Spacer()
-                                }
-                                .padding(.leading, 34)
-                                .frame(height: 22)
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("problem-\(diagnostic.line)")
+                    ForEach(rows(problems), id: \.id) { row in
+                        if let diagnostic = row.diagnostic {
+                            diagnosticRow(diagnostic, content: row.content)
+                        } else {
+                            fileRow(path: row.path, count: row.count)
                         }
                     }
                 }
             }
             .foregroundStyle(theme.color("foreground"))
         }
+    }
+
+    /// A file's header or one of its diagnostics, as one flat list.
+    private struct Row {
+        /// Unique across files: a diagnostic's own id names no file, so rows
+        /// nested per file could repeat ids, and the lazy list then shows
+        /// one file's rows under another.
+        let id: String
+        let content: EditorContent
+        let path: String
+        let count: Int
+        let diagnostic: Diagnostic?
+    }
+
+    private func rows(_ problems: [(content: EditorContent, path: String, diagnostics: [Diagnostic])]) -> [Row] {
+        problems.flatMap { entry -> [Row] in
+            let file = "\(entry.content)"
+            return [Row(id: "file:\(file)", content: entry.content, path: entry.path, count: entry.diagnostics.count, diagnostic: nil)]
+                + entry.diagnostics.enumerated().map { Row(id: "problem:\(file)#\($0.offset)", content: entry.content, path: entry.path, count: 0, diagnostic: $0.element) }
+        }
+    }
+
+    private func fileRow(path: String, count: Int) -> some View {
+        HStack(spacing: 6) {
+            FileIcon(name: WorkspacePath.name(of: path), size: 12)
+            Text(WorkspacePath.name(of: path)).font(.system(size: 13))
+            Text(WorkspacePath.parent(of: path)).font(.system(size: 11)).foregroundStyle(theme.color("descriptionForeground"))
+            Text("\(count)")
+                .font(.system(size: 9, weight: .bold))
+                .padding(.horizontal, 5)
+                .background(Capsule().fill(theme.color("badge.background")))
+        }
+        .padding(.leading, 12)
+        .frame(height: 22)
+    }
+
+    private func diagnosticRow(_ diagnostic: Diagnostic, content: EditorContent) -> some View {
+        Button {
+            Task { await workbench.open(content, line: diagnostic.line, column: diagnostic.column) }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: diagnostic.severity == .error ? "xmark.circle.fill" : diagnostic.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")
+                    .foregroundStyle(theme.color(diagnostic.severity == .error ? "editorError.foreground" : diagnostic.severity == .warning ? "editorWarning.foreground" : "editorInfo.foreground"))
+                    .font(.system(size: 11))
+                Text(diagnostic.message).font(.system(size: 13)).lineLimit(1)
+                Text("\(diagnostic.source) [Ln \(diagnostic.line + 1), Col \(diagnostic.column + 1)]")
+                    .font(.system(size: 12))
+                    .foregroundStyle(theme.color("descriptionForeground"))
+                Spacer()
+            }
+            .padding(.leading, 34)
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("problem-\(diagnostic.line)")
     }
 }
 

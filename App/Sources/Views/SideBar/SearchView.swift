@@ -72,48 +72,77 @@ struct SearchView: View {
         .onChange(of: search.focusRequest, initial: true) { _, _ in queryFocused = true }
     }
 
+    /// One row of the results list: a file's header or one of its matches.
+    private enum ResultRow: Identifiable {
+        case file(FileSearchResult)
+        case match(FileSearchResult, index: Int, SearchMatch)
+
+        /// Unique across files. Matches nested per file and numbered from 0 in
+        /// each repeated their ids in the lazy list, which then showed one
+        /// file's match under another file and dropped others.
+        var id: String {
+            switch self {
+            case .file(let file): "file:\(file.path)"
+            case .match(let file, let index, _): "match:\(file.path)#\(index)"
+            }
+        }
+    }
+
+    private var resultRows: [ResultRow] {
+        search.results.flatMap { file -> [ResultRow] in
+            guard !search.collapsed.contains(file.path) else { return [.file(file)] }
+            return [.file(file)] + file.matches.prefix(200).enumerated().map { .match(file, index: $0.offset, $0.element) }
+        }
+    }
+
     private var results: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(search.results) { file in
-                    let collapsed = search.collapsed.contains(file.path)
-                    Button {
-                        if collapsed { search.collapsed.remove(file.path) } else { search.collapsed.insert(file.path) }
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .semibold)).frame(width: 14)
-                            FileIcon(name: WorkspacePath.name(of: file.path), size: 13)
-                            Text(WorkspacePath.name(of: file.path)).font(.system(size: 13)).lineLimit(1)
-                            Text(WorkspacePath.parent(of: file.path)).font(.system(size: 11)).foregroundStyle(theme.color("descriptionForeground")).lineLimit(1)
-                            Spacer()
-                            Text("\(file.matches.count)")
-                                .font(.system(size: 10, weight: .semibold))
-                                .padding(.horizontal, 5)
-                                .background(Capsule().fill(theme.color("badge.background")))
-                                .foregroundStyle(theme.color("badge.foreground"))
-                        }
-                        .frame(height: 22)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    if !collapsed {
-                        ForEach(Array(file.matches.prefix(200).enumerated()), id: \.offset) { _, match in
-                            Button {
-                                Task { await workbench.open(file.path, preview: true, line: match.line, column: match.range.location) }
-                            } label: {
-                                matchPreview(match)
-                                    .padding(.leading, 34)
-                                    .frame(height: 22, alignment: .leading)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityIdentifier("search-match-\(file.path)-\(match.line)")
-                        }
+                ForEach(resultRows) { row in
+                    switch row {
+                    case .file(let file): fileHeader(file)
+                    case .match(let file, _, let match): matchRow(match, in: file)
                     }
                 }
             }
         }
+    }
+
+    private func fileHeader(_ file: FileSearchResult) -> some View {
+        let collapsed = search.collapsed.contains(file.path)
+        return Button {
+            if collapsed { search.collapsed.remove(file.path) } else { search.collapsed.insert(file.path) }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: collapsed ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .semibold)).frame(width: 14)
+                FileIcon(name: WorkspacePath.name(of: file.path), size: 13)
+                Text(WorkspacePath.name(of: file.path)).font(.system(size: 13)).lineLimit(1)
+                Text(WorkspacePath.parent(of: file.path)).font(.system(size: 11)).foregroundStyle(theme.color("descriptionForeground")).lineLimit(1)
+                Spacer()
+                Text("\(file.matches.count)")
+                    .font(.system(size: 10, weight: .semibold))
+                    .padding(.horizontal, 5)
+                    .background(Capsule().fill(theme.color("badge.background")))
+                    .foregroundStyle(theme.color("badge.foreground"))
+            }
+            .frame(height: 22)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func matchRow(_ match: SearchMatch, in file: FileSearchResult) -> some View {
+        Button {
+            Task { await workbench.open(file.path, preview: true, line: match.line, column: match.range.location) }
+        } label: {
+            matchPreview(match)
+                .padding(.leading, 34)
+                .frame(height: 22, alignment: .leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityIdentifier("search-match-\(file.path)-\(match.line)")
     }
 
     private func matchPreview(_ match: SearchMatch) -> some View {
