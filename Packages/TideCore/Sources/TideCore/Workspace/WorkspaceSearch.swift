@@ -138,8 +138,29 @@ public enum WorkspaceSearch {
     }
 
     /// Comma-separated globs from a Search view field, matching at any depth.
+    /// Commas inside `{...}` or `[...]` belong to the pattern, as in VS Code's
+    /// `splitGlobAware`, so `*.{js,ts}` stays one glob.
     public static func globs(_ field: String) -> [Glob] {
-        field.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.map { Glob($0, matchAnywhere: true) }
+        var patterns: [String] = []
+        var current = ""
+        var braceDepth = 0
+        var inBrackets = false
+        for character in field {
+            switch character {
+            case "," where braceDepth == 0 && !inBrackets:
+                patterns.append(current)
+                current = ""
+                continue
+            case "{" where !inBrackets: braceDepth += 1
+            case "}" where !inBrackets: braceDepth = max(0, braceDepth - 1)
+            case "[": inBrackets = true
+            case "]": inBrackets = false
+            default: break
+            }
+            current.append(character)
+        }
+        patterns.append(current)
+        return patterns.map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.map { Glob($0, matchAnywhere: true) }
     }
 
     static func relativePath(of url: URL, base: URL) -> String {
