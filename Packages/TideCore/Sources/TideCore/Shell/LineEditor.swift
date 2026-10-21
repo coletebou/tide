@@ -41,7 +41,10 @@ public struct LineEditor: Sendable {
         draft = []
     }
 
-    /// Processes input bytes; `history` is oldest first.
+    /// Processes input bytes; `history` is oldest first. Processing stops
+    /// after a Tab, so its `.complete` event comes last and the caller can
+    /// complete the line before the input after it is read; feeding again,
+    /// with no new bytes, resumes.
     public mutating func feed(_ bytes: some Sequence<UInt8>, history: [String]) -> [Event] {
         var events: [Event] = []
         var output = ""
@@ -115,6 +118,8 @@ public struct LineEditor: Sendable {
             case 0x09:
                 flush()
                 events.append(.complete(line))
+                pending.removeFirst(index + 1)
+                return events
             default:
                 guard byte >= 0x20 else { break }
                 // Decode UTF-8, waiting for the rest of a multi-byte character.

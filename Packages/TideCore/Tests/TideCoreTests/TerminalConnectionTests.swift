@@ -80,6 +80,19 @@ struct LocalShellConnectionTests {
         #expect(log.events.isEmpty)
     }
 
+    /// A Tab completes before the input after it is read, so pasted text
+    /// with a Tab in it runs the completed line.
+    @Test func tabCompletesInsidePastedInput() throws {
+        let workspace = try TemporaryWorkspace(["notes.txt": "hello\n"])
+        let shell = LocalShellConnection(root: workspace.url)
+        let log = EventLog(shell)
+        shell.send(Array("cat no\t\r".utf8))
+        #expect(log.output.hasPrefix("cat notes.txt \nhello\n"))
+        log.clear()
+        shell.send(Array("ec\thi\r".utf8))
+        #expect(log.output.hasPrefix("echo hi\nhi\n"))
+    }
+
     @Test func redrawsThePromptAndLineAfterAClear() throws {
         let workspace = try TemporaryWorkspace()
         let shell = LocalShellConnection(root: workspace.url)

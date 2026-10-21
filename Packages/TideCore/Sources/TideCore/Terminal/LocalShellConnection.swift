@@ -33,9 +33,16 @@ public final class LocalShellConnection: TerminalConnection {
 
     public func send(_ bytes: [UInt8]) {
         guard let shell, !ended else { return }
-        for event in lineEditor.feed(bytes, history: shell.history) {
-            handle(event, shell: shell)
-            if ended { return }
+        var events = lineEditor.feed(bytes, history: shell.history)
+        while true {
+            for event in events {
+                handle(event, shell: shell)
+                if ended { return }
+            }
+            // The editor stops at a Tab so the completion lands before the
+            // input after it, as when "ec\tfoo" is pasted; then it resumes.
+            guard case .complete? = events.last else { return }
+            events = lineEditor.feed([], history: shell.history)
         }
     }
 

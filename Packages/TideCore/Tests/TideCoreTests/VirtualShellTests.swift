@@ -219,6 +219,16 @@ struct LineEditorTests {
         #expect(editor.line == "make")
     }
 
+    /// A Tab stops the editor so the caller can complete the line before the
+    /// input after it is read; feeding again resumes with that input.
+    @Test func tabWaitsForTheCompletion() {
+        var editor = LineEditor()
+        #expect(editor.feed(Array("ec\tfoo\r".utf8), history: []) == [.output("ec"), .complete("ec")])
+        #expect(editor.insert("ho ") == "ho ")
+        #expect(editor.feed([], history: []) == [.output("foo\r\n"), .submit("echo foo")])
+        #expect(editor.feed([], history: []).isEmpty)
+    }
+
     /// A CRLF pair, as in text pasted from Windows files, is a single Enter.
     @Test func carriageReturnLineFeedIsOneEnter() {
         var editor = LineEditor()
