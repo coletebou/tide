@@ -163,7 +163,7 @@ final class CodeTextView: UITextView {
     // first responder. The controller is not a responder, so the actions are
     // methods of this view that forward to it.
     private lazy var editorKeyCommands: [UIKeyCommand] = {
-        func command(_ title: String, _ input: String, _ modifiers: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
+        @MainActor func command(_ title: String, _ input: String, _ modifiers: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
             let command = UIKeyCommand(title: title, action: action, input: input, modifierFlags: modifiers)
             command.wantsPriorityOverSystemBehavior = true
             return command
