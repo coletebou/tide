@@ -379,7 +379,9 @@ public final class VirtualShell {
 
     private func rmdir(_ args: [String]) throws -> CommandResult {
         for target in args {
-            let directory = url(for: try resolve(target))
+            let path = try resolve(target)
+            guard !path.isEmpty else { return CommandResult(stderr: "rmdir: refusing to remove the workspace root\n", exitCode: 1) }
+            let directory = url(for: path)
             guard (try FileManager.default.contentsOfDirectory(atPath: directory.path)).isEmpty else {
                 return CommandResult(stderr: "rmdir: \(target): Directory not empty\n", exitCode: 1)
             }
