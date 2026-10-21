@@ -207,6 +207,61 @@ struct GitStatusTests {
         #expect(ours == (try sandbox.porcelainStatus(repository)))
     }
 
+    /// Git hashes work-tree files through its line-ending conversion (the
+    /// `text`, `eol` and `crlf` attributes, and `core.autocrlf`), so CRLF
+    /// files whose blobs hold LF are unchanged once their timestamps no
+    /// longer match the index.
+    @Test func hashesThroughLineEndingConversionLikeGit() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        // Committed before any attributes exist, so its blob keeps CRLF and text=auto leaves it alone.
+        try sandbox.write("old\r\nfile\r\n", to: "committed.auto", in: repository)
+        try sandbox.commitAll("crlf blob", in: repository)
+        try sandbox.write("""
+            [attr]windows text eol=crlf
+            *.text text
+            *.crlf eol=crlf
+            *.auto text=auto
+            *.legacy crlf
+            *.macro windows
+            *.binary binary
+            *.none -text
+
+            """, to: ".gitattributes", in: repository)
+        try sandbox.write("*.text -text\n*.auto !text\n", to: "raw/.gitattributes", in: repository)
+        try sandbox.write("info.text -text\n", to: ".git/info/attributes", in: repository)
+        let names = ["a.text", "changed.text", "b.crlf", "c.auto", "d.legacy", "e.macro", "f.binary", "g.none", "raw/h.text", "raw/i.auto", "info.text", "plain.txt"]
+        for name in names {
+            try sandbox.write("one\r\ntwo\r\n", to: name, in: repository)
+        }
+        try sandbox.write("lone\rcarriage return\r\n", to: "lone.text", in: repository)
+        try sandbox.write(Data("nul\0byte\r\n".utf8), to: "nul.auto", in: repository)
+        try sandbox.commitAll("crlf work tree", in: repository)
+        // Same size, different content.
+        try sandbox.write("uno\r\ntwo\r\n", to: "changed.text", in: repository)
+        try Self.touch(names + ["committed.auto", "lone.text", "nul.auto"], in: repository)
+
+        #expect(try sandbox.swiftStatus(repository) == sandbox.porcelainStatus(repository))
+        #expect(try sandbox.swiftStatus(repository) == [" M changed.text"])
+
+        // core.autocrlf converts files that no attribute covers, like text=auto.
+        let autoCRLF = try sandbox.makeRepository("autocrlf")
+        try sandbox.git("config", "core.autocrlf", "true", in: autoCRLF)
+        try sandbox.write("one\r\ntwo\r\n", to: "file.txt", in: autoCRLF)
+        try sandbox.commitAll("autocrlf", in: autoCRLF)
+        try Self.touch(["file.txt"], in: autoCRLF)
+        #expect(try sandbox.swiftStatus(autoCRLF) == sandbox.porcelainStatus(autoCRLF))
+        #expect(try sandbox.swiftStatus(autoCRLF).isEmpty)
+    }
+
+    /// Moves modification times into the past, so status must read the files.
+    static func touch(_ paths: [String], in repository: URL) throws {
+        let past = Date().addingTimeInterval(-3600)
+        for path in paths {
+            try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: repository.appendingPathComponent(path).path)
+        }
+    }
+
     @Test func statusWorksWithIndexVersion4AndPackedHistory() throws {
         let sandbox = try GitSandbox()
         let repository = try sandbox.makeRepository()

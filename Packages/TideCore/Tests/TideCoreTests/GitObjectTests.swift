@@ -238,7 +238,30 @@ struct GitObjectTests {
         #expect(throws: GitError.self) { try GitDelta.apply(short, to: base) }
     }
 
+    /// One-byte copy instructions let a few kilobytes of delta describe an
+    /// enormous object. Git never deltifies objects above core.bigFileThreshold
+    /// (512 MiB by default), so a larger result is refused before memory is set aside for it.
+    @Test func deltasRefuseResultsLargerThanGitCreates() throws {
+        let base = Data(repeating: 0x61, count: 0x10000)
+        let copies = (512 << 20) / base.count + 1
+        // 0x80 with no offset or size bytes copies 0x10000 bytes from offset 0: the whole base.
+        let delta = Self.deltaSize(base.count) + Self.deltaSize(copies * base.count) + Data(repeating: 0x80, count: copies)
+        #expect(throws: GitError.self) { try GitDelta.apply(delta, to: base) }
+    }
+
     // MARK: Helpers
+
+    /// A size in the header of delta data: base 128, least significant group first.
+    static func deltaSize(_ value: Int) -> Data {
+        var value = value
+        var bytes: [UInt8] = []
+        repeat {
+            let group = UInt8(value & 0x7F)
+            value >>= 7
+            bytes.append(value == 0 ? group : group | 0x80)
+        } while value != 0
+        return Data(bytes)
+    }
 
     /// Every object in the repository, from `git cat-file --batch-all-objects --batch`.
     static func allObjects(_ sandbox: GitSandbox, _ repository: URL) throws -> [GitObjectID: GitObject] {

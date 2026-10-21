@@ -141,6 +141,40 @@ struct GitRepositoryTests {
         #expect(try opened.status().ahead == 0)
     }
 
+    /// The walk follows each side's own commits to the end however long they
+    /// run: a branch the upstream merged and then moved past, and unrelated
+    /// histories, count like `git rev-list --left-right --count`.
+    @Test func countsLongOneSidedHistoriesLikeRevList() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        func commit(_ message: String, at seconds: Int, merging branch: String? = nil) throws {
+            let date = "\(1_700_000_000 + seconds) +0000"
+            let dates = ["GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date]
+            if let branch {
+                try sandbox.git("merge", "-q", "--no-ff", "-m", message, branch, in: repository, environment: dates)
+            } else {
+                try sandbox.git("commit", "-q", "--allow-empty", "-m", message, in: repository, environment: dates)
+            }
+        }
+        try commit("base", at: 0)
+        try sandbox.git("switch", "-q", "-c", "feature", in: repository)
+        try commit("feature", at: 5_000)
+        try sandbox.git("switch", "-q", "main", in: repository)
+        // Commits made on main while the feature was in progress, so older than it.
+        for number in 1...40 { try commit("main \(number)", at: 1_000 + number) }
+        try commit("merge feature", at: 6_000, merging: "feature")
+        try sandbox.git("switch", "-q", "--orphan", "unrelated", in: repository)
+        try commit("unrelated", at: 9_000)
+
+        let opened = try GitRepository.opened(repository)
+        for (local, upstream) in [("feature", "main"), ("unrelated", "main~1"), ("main~1", "unrelated"), ("unrelated", "main")] {
+            let counts = try sandbox.git("rev-list", "--left-right", "--count", "\(local)...\(upstream)", in: repository)
+                .split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
+            let ours = try opened.aheadBehind(local: Self.revParse(sandbox, repository, local), upstream: Self.revParse(sandbox, repository, upstream))
+            #expect([ours.ahead, ours.behind] == counts, "\(local)...\(upstream)")
+        }
+    }
+
     @Test func opensLinkedWorktrees() throws {
         let sandbox = try GitSandbox()
         let repository = try sandbox.makeRepository()
