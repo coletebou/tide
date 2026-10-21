@@ -146,6 +146,10 @@ public final class SSHShellSession: Sendable {
             try await started.futureResult.get()
             return (SSHShellSession(connection: connection, channel: channel), events)
         } catch {
+            // The shell's start is still open if its channel never was (the
+            // login failed first), and NIO traps on a promise left unfulfilled;
+            // failing one that is already complete does nothing.
+            started.fail(error)
             connection.close(promise: nil)
             continuation.finish()
             // The host key check and the login fail the connection, which then
