@@ -100,10 +100,6 @@ extension XCUIApplication {
     var paletteField: XCUIElement { textFields["quick-input-field"] }
     var paletteRows: XCUIElementQuery { descendants(matching: .any).matching(identifier: "quick-input-item") }
     var statusPosition: XCUIElement { buttons["status-position"] }
-
-    func pressEscape() {
-        typeKey(XCUIKeyboardKey.escape.rawValue, modifierFlags: [])
-    }
 }
 
 extension XCUIElement {

@@ -32,8 +32,11 @@ final class TideUITests: TideUITestCase {
         press(app, "p", [.command, .shift], opening: "the Command Palette") { app.paletteField.exists }
         focus(app, app.paletteField, "the Command Palette").typeText("zzqx")
         require(app, "the empty-result message") { app.staticTexts["quick-input-message"].label == "No matching commands" }
-        app.pressEscape()
-        require(app, "Escape to close the palette") { !app.paletteField.exists }
+        // A tap outside closes the palette, as on a touch screen. Escape is not
+        // checked: XCTest detaches the simulator's hardware keyboard during UI
+        // tests, and key commands such as the palette's Escape need one.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        require(app, "a tap outside to close the palette") { !app.paletteField.exists }
     }
 
     @MainActor
@@ -113,10 +116,8 @@ final class TideUITests: TideUITestCase {
         screenshot(app, "find-replace")
     }
 
-    /// ⌘G is one of the editor's own key commands (no menu item carries it),
-    /// so it works only if the text view forwards it to the editor.
     @MainActor
-    func testFindNextFromTheEditorKeyboard() throws {
+    func testFindNextAndPreviousMoveBetweenMatches() throws {
         let app = try launchTide()
         let find = app.textFields["find-find"]
         press(app, "f", .command, opening: "the Find widget") { find.exists }
@@ -124,10 +125,11 @@ final class TideUITests: TideUITestCase {
         let summary = app.staticTexts["find-summary"]
         require(app, "three matches in README.md") { summary.label.hasSuffix("of 3") }
 
-        focus(app, app.editor, "the editor")
-        let before = summary.label
+        let first = summary.label
         app.typeKey("g", modifierFlags: .command)
-        require(app, "⌘G to move to another match") { summary.label != before && summary.label.hasSuffix("of 3") }
+        require(app, "⌘G to move to the next match") { summary.label != first && summary.label.hasSuffix("of 3") }
+        app.typeKey("g", modifierFlags: [.command, .shift])
+        require(app, "⇧⌘G to move back") { summary.label == first }
     }
 
     @MainActor
@@ -187,7 +189,6 @@ final class TideUITests: TideUITestCase {
         let current = app.paletteRows.matching(NSPredicate(format: "selected == true")).firstMatch
         require(app, "the current theme in the picker") { current.exists }
         XCTAssertTrue(current.label.contains("Monokai"))
-        app.pressEscape()
     }
 
     @MainActor
