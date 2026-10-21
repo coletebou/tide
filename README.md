@@ -89,6 +89,23 @@ run on a Mac in seconds:
 swift test --package-path Packages/TideCore
 ```
 
+The end-to-end tests in `UITests/` drive the real app on an iPad simulator
+with hardware-keyboard shortcuts: the Command Palette, Quick Open, the
+terminal, Search, find and replace, saving, Settings, themes and the split
+editor. Each launch passes `-uiTesting`, which starts from a fresh copy of the
+sample workspace and default settings (plus any `TIDE_UI_TEST_SETTINGS` JSON).
+Attach a hardware keyboard to the simulator (I/O > Keyboard) before running
+them:
+
+```sh
+xcodebuild test -project Tide.xcodeproj -scheme Tide \
+  -destination 'platform=iOS Simulator,name=iPad Pro 13-inch (M5)' \
+  -skipPackagePluginValidation -skipMacroValidation
+```
+
+CI runs both suites on every push and keeps the UI tests' screenshots as a
+build artifact.
+
 ## Architecture
 
 | Layer | Where | What |
