@@ -56,6 +56,7 @@ struct QuickInputView: View {
         .clipShape(RoundedRectangle(cornerRadius: 6))
         .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.color("widget.border"), lineWidth: 1))
         .shadow(color: .black.opacity(0.4), radius: 14, y: 4)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("quick-input")
     }
 
@@ -107,6 +108,7 @@ struct QuickInputView: View {
         }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("quick-input-item")
+        .accessibilityAddTraits(item.isPicked ? .isSelected : [])
     }
 }
 

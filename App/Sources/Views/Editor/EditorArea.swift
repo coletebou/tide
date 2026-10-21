@@ -183,6 +183,7 @@ struct TabItem: View {
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Close \(title)")
+            .accessibilityValue(isDirty ? "Unsaved changes" : "")
         }
         .foregroundStyle(theme.color(isActive ? "tab.activeForeground" : "tab.inactiveForeground"))
         .padding(.leading, 10)
@@ -225,6 +226,7 @@ struct TabItem: View {
                 workbench.splitEditor()
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("tab-\(title)")
     }
 }
@@ -308,6 +310,7 @@ struct FindWidget: View {
                 Image(systemName: find.showReplace ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).frame(width: 16, height: 26)
             }
             .buttonStyle(.plain)
+            .accessibilityLabel("Toggle Replace")
             VStack(spacing: 4) {
                 HStack(spacing: 4) {
                     field("Find", text: $find.query)

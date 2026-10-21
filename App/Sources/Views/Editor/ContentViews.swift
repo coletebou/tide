@@ -189,6 +189,7 @@ private struct SettingRow: View {
                 Text(descriptor.key).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.color("descriptionForeground").opacity(0.7))
             }
         }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("setting-\(descriptor.key)")
     }
 

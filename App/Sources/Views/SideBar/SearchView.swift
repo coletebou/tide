@@ -18,6 +18,7 @@ struct SearchView: View {
                     Image(systemName: search.showReplace ? "chevron.down" : "chevron.right").font(.system(size: 10, weight: .semibold)).frame(width: 16, height: 26)
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Toggle Replace")
                 VStack(spacing: 4) {
                     inputField("Search", text: $search.query, focused: true) {
                         toggle("Aa", "Match Case", $search.matchCase)
@@ -160,6 +161,7 @@ struct SearchView: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel(help)
+        .accessibilityAddTraits(value.wrappedValue ? .isSelected : [])
     }
 }
 

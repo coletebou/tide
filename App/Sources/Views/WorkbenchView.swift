@@ -310,12 +310,14 @@ struct ToastStack: View {
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.color("descriptionForeground"))
+                    .accessibilityLabel("Clear Notification")
                 }
                 .padding(12)
                 .background(RoundedRectangle(cornerRadius: 6).fill(theme.color("notifications.background")))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.color("notifications.border"), lineWidth: 1))
                 .shadow(color: .black.opacity(0.35), radius: 8, y: 2)
                 .transition(.move(edge: .trailing).combined(with: .opacity))
+                .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("toast")
             }
         }
