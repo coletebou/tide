@@ -131,9 +131,11 @@ final class TextDocument: Identifiable {
         }
         if insertFinalNewline, !text.isEmpty, !text.hasSuffix("\n") { text += format.lineEnding.rawValue }
         if text != storage.string { replaceText(with: text) }
+        let writtenVersion = version
         try await fileSystem.write(path, data: TextFileCodec.encode(text, format: format))
         savedText = text
-        isDirty = false
+        // Edits typed while the write was in flight are still unsaved.
+        isDirty = version != writtenVersion && storage.string != text
         hasConflict = false
     }
 
@@ -150,7 +152,14 @@ final class TextDocument: Identifiable {
 
     /// Re-reads the file if it changed on disk; keeps local edits and flags a conflict instead.
     func refreshFromDisk() async {
-        guard !isUntitled, let data = try? await fileSystem.read(path), let (text, _) = TextFileCodec.decode(data), text != savedText else { return }
+        guard !isUntitled, let data = try? await fileSystem.read(path), let (text, _) = TextFileCodec.decode(data) else { return }
+        fileDidChange(to: text)
+    }
+
+    /// Takes text that was just written to the file from outside this editor:
+    /// shows it, or flags a conflict when there are unsaved edits.
+    func fileDidChange(to text: String) {
+        guard text != savedText else { return }
         if isDirty {
             hasConflict = true
         } else {

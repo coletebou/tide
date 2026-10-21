@@ -79,7 +79,7 @@ struct ProblemsView: View {
         } else {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(problems, id: \.path) { entry in
+                    ForEach(problems, id: \.content) { entry in
                         HStack(spacing: 6) {
                             FileIcon(name: WorkspacePath.name(of: entry.path), size: 12)
                             Text(WorkspacePath.name(of: entry.path)).font(.system(size: 13))
@@ -93,7 +93,7 @@ struct ProblemsView: View {
                         .frame(height: 22)
                         ForEach(entry.diagnostics) { diagnostic in
                             Button {
-                                Task { await workbench.open(entry.path, preview: false, line: diagnostic.line, column: diagnostic.column) }
+                                Task { await workbench.open(entry.content, line: diagnostic.line, column: diagnostic.column) }
                             } label: {
                                 HStack(spacing: 6) {
                                     Image(systemName: diagnostic.severity == .error ? "xmark.circle.fill" : diagnostic.severity == .warning ? "exclamationmark.triangle.fill" : "info.circle.fill")

@@ -116,18 +116,19 @@ enum WorkspaceLauncher {
             workbench.toast("Tide could not get access to that folder.", kind: .error)
             return
         }
+        // Remember the folder for the next launch only once it is open.
+        guard await workbench.openWorkspace(Workspace(fileSystem: LocalFileSystem(root: url), scopedURL: url)) else { return }
         if let bookmark = try? url.bookmarkData(options: [], includingResourceValuesForKeys: nil, relativeTo: nil) {
             UserDefaults.standard.set(bookmark, forKey: bookmarkKey)
         }
-        await workbench.openWorkspace(Workspace(fileSystem: LocalFileSystem(root: url), scopedURL: url))
     }
 }
 
 extension Workbench {
     func openSampleWorkspace() async {
         WorkspaceLauncher.seedSampleIfNeeded()
+        guard await openWorkspace(Workspace(fileSystem: LocalFileSystem(root: WorkspaceLauncher.sampleURL, displayName: "Tide Sample"))) else { return }
         UserDefaults.standard.removeObject(forKey: WorkspaceLauncher.bookmarkKey)
-        await openWorkspace(Workspace(fileSystem: LocalFileSystem(root: WorkspaceLauncher.sampleURL, displayName: "Tide Sample")))
     }
 }
 

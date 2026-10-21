@@ -25,6 +25,10 @@ final class SearchModel {
 
     var matchCount: Int { results.reduce(0) { $0 + $1.matches.count } }
 
+    /// While a search is pending, `results` still belong to the previous query
+    /// and filters (or are partial), so replacing in them would edit the wrong files.
+    var canReplaceAll: Bool { !isSearching && !results.isEmpty }
+
     var summary: String {
         if let error { return error }
         if query.isEmpty { return "" }
@@ -90,7 +94,7 @@ final class SearchModel {
 
     /// Replaces every match in every result file (open documents are edited in place).
     func replaceAll() async {
-        guard let workbench, !results.isEmpty, let regex = try? WorkspaceSearch.regex(for: SearchQuery(pattern: query, isRegex: isRegex, matchCase: matchCase, wholeWord: wholeWord)) else { return }
+        guard let workbench, canReplaceAll, let regex = try? WorkspaceSearch.regex(for: SearchQuery(pattern: query, isRegex: isRegex, matchCase: matchCase, wholeWord: wholeWord)) else { return }
         var total = 0
         var files = 0
         for result in results {
