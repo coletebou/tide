@@ -59,11 +59,15 @@ enum WorkspaceLauncher {
     static var documentsURL: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
     static var sampleURL: URL { documentsURL.appendingPathComponent("Tide Sample", isDirectory: true) }
 
+    /// The UI tests launch with `-uiTesting`, so every launch starts the same way.
+    static var isUITesting: Bool { ProcessInfo.processInfo.arguments.contains("-uiTesting") }
+
     static func makeWorkbench() async -> Workbench {
+        if isUITesting { resetForUITesting() }
         seedSampleIfNeeded()
-        let arguments = ProcessInfo.processInfo.arguments
+        let fresh = isUITesting || ProcessInfo.processInfo.arguments.contains("-resetWorkspace")
         var workspace: Workspace?
-        if !arguments.contains("-resetWorkspace"), let data = UserDefaults.standard.data(forKey: bookmarkKey) {
+        if !fresh, let data = UserDefaults.standard.data(forKey: bookmarkKey) {
             var stale = false
             if let url = try? URL(resolvingBookmarkData: data, bookmarkDataIsStale: &stale), url.startAccessingSecurityScopedResource() {
                 workspace = Workspace(fileSystem: LocalFileSystem(root: url), scopedURL: url)
@@ -72,7 +76,7 @@ enum WorkspaceLauncher {
         let workbench = Workbench(workspace: workspace ?? Workspace(fileSystem: LocalFileSystem(root: sampleURL, displayName: "Tide Sample")))
         await workbench.workspace.refresh()
         var restored = false
-        if !arguments.contains("-resetWorkspace") {
+        if !fresh {
             restored = await workbench.restoreSession()
         }
         if !restored {
@@ -83,6 +87,19 @@ enum WorkspaceLauncher {
         }
         workbench.log("Tide started with \(workbench.workspace.name)")
         return workbench
+    }
+
+    /// Forgets everything an earlier run left: settings (replaced by the
+    /// `TIDE_UI_TEST_SETTINGS` settings.json body, if set), session, imported
+    /// themes, recent commands, the folder bookmark and edits to the sample.
+    private static func resetForUITesting() {
+        UserDefaults.standard.removeObject(forKey: bookmarkKey)
+        UserDefaults.standard.removeObject(forKey: CommandRegistry.recentlyUsedKey)
+        try? FileManager.default.removeItem(at: Workbench.userDirectory)
+        if let settings = ProcessInfo.processInfo.environment["TIDE_UI_TEST_SETTINGS"] {
+            try? settings.write(to: Workbench.userDirectory.appendingPathComponent(Workbench.settingsPath), atomically: true, encoding: .utf8)
+        }
+        seedSampleIfNeeded(force: true)
     }
 
     /// Copies the bundled sample project into Documents the first time.

@@ -20,10 +20,12 @@ struct Command: Identifiable {
 
 /// All commands, plus the Command Palette's recently-used list.
 final class CommandRegistry {
+    static let recentlyUsedKey = "tide.recentCommands"
+
     private(set) var commands: [String: Command] = [:]
     private(set) var order: [String] = []
     /// Most recent first, capped at `workbench.commandPalette.history` (50).
-    private(set) var recentlyUsed: [String] = UserDefaults.standard.stringArray(forKey: "tide.recentCommands") ?? []
+    private(set) var recentlyUsed: [String] = UserDefaults.standard.stringArray(forKey: CommandRegistry.recentlyUsedKey) ?? []
 
     func register(_ command: Command) {
         if commands[command.id] == nil { order.append(command.id) }
@@ -40,7 +42,7 @@ final class CommandRegistry {
         recentlyUsed.removeAll { $0 == id }
         recentlyUsed.insert(id, at: 0)
         if recentlyUsed.count > max(0, limit) { recentlyUsed.removeLast(recentlyUsed.count - max(0, limit)) }
-        UserDefaults.standard.set(recentlyUsed, forKey: "tide.recentCommands")
+        UserDefaults.standard.set(recentlyUsed, forKey: Self.recentlyUsedKey)
     }
 
     var all: [Command] { order.compactMap { commands[$0] } }
