@@ -1,4 +1,6 @@
 import Foundation
+import NIOCore
+import NIOPosix
 import Testing
 import TideCore
 @testable import TideSSH
@@ -111,6 +113,35 @@ struct SSHShellSessionTests {
         await #expect(throws: SSHConnectionError.self) {
             _ = try await SSHShellSession.open(SSHTarget(user: server.user, host: "127.0.0.1", port: 1), size: size, options: options(keys: [], knownHosts: KnownHosts()))
         }
+    }
+
+    /// A host that takes the connection and never speaks SSH is given up on.
+    @Test func givesUpOnAHostThatNeverAnswers() async throws {
+        let silent = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton).bind(host: "127.0.0.1", port: 0).get()
+        defer { silent.close(promise: nil) }
+        let port = try #require(silent.localAddress?.port)
+        var impatient = options(keys: [try server.key("client_ed25519")], knownHosts: KnownHosts())
+        impatient.handshakeTimeout = 1
+        await #expect(throws: SSHConnectionError.timedOut) {
+            _ = try await SSHShellSession.open(SSHTarget(user: server.user, host: "127.0.0.1", port: port), size: size, options: impatient)
+        }
+    }
+
+    /// Cancelling while the host key question is open ends the attempt, and a
+    /// late "trust" answer no longer connects.
+    @Test func cancellingStopsAConnectionWaitingOnAQuestion() async throws {
+        let prompts = Recorded<SSHHostKeyPrompt>()
+        let options = SSHSessionOptions(keys: [try server.key("client_ed25519")], knownHosts: KnownHosts(), trustHostKey: { prompt in
+            prompts.append(prompt)
+            try? await Task.sleep(for: .seconds(2))
+            return true
+        }, password: { _ in nil })
+        let target = server.target
+        let attempt = Task { try await SSHShellSession.open(target, size: size, options: options) }
+        #expect(await poll(.seconds(20)) { !prompts.all.isEmpty })
+        attempt.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await attempt.value }
+        #expect(prompts.all.count == 1)
     }
 
     /// The connection a terminal uses: it says it is connecting, buffers keys

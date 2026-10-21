@@ -31,7 +31,12 @@ let package = Package(
         ),
         .testTarget(
             name: "TideSSHTests",
-            dependencies: ["TideSSH", .product(name: "TideCore", package: "TideCore")]
+            dependencies: [
+                "TideSSH",
+                .product(name: "TideCore", package: "TideCore"),
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+            ]
         ),
     ]
 )

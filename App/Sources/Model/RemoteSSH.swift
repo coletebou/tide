@@ -144,18 +144,25 @@ extension Workbench {
     func connect(to target: SSHTarget) {
         let ssh = RemoteSSH.shared
         ssh.remember(target)
+        let id = UUID()
         let options = SSHSessionOptions(keys: ssh.key.map { [$0] } ?? [], knownHosts: ssh.knownHosts(), trustHostKey: { [weak self] prompt in
-            await self?.askToTrust(prompt) ?? false
+            await self?.askToTrust(prompt, for: id) ?? false
         }, password: { [weak self] attempt in
-            await self?.askForPassword(target, attempt: attempt)
+            await self?.askForPassword(target, attempt: attempt, for: id)
         })
-        terminals.add(TerminalSession(connection: SSHTerminalConnection(target: target, options: options), title: target.description, workbench: self))
+        terminals.add(TerminalSession(id: id, connection: SSHTerminalConnection(target: target, options: options), title: target.description, workbench: self))
         showPanel(.terminal)
     }
 
-    /// Asks, as ssh does, about a host key the known hosts do not list.
-    /// Trusting it adds it to them.
-    func askToTrust(_ prompt: SSHHostKeyPrompt) async -> Bool {
+    private func hasTerminal(_ id: UUID) -> Bool {
+        terminals.sessions.contains { $0.id == id }
+    }
+
+    /// Asks, as ssh does, about a host key the known hosts do not list, for
+    /// the terminal `owner`. Trusting it adds it to them, unless the terminal
+    /// closed while the question was open.
+    func askToTrust(_ prompt: SSHHostKeyPrompt, for owner: UUID) async -> Bool {
+        guard hasTerminal(owner) else { return false }
         let trusted = await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
             let reply = Reply(continuation)
             showPick(.init(
@@ -165,9 +172,11 @@ extension Workbench {
                     QuickInputItem(id: "ssh-trust", label: "Continue", description: "Trust this key and remember it", detail: prompt.fingerprint, icon: .symbol("checkmark.shield")) { reply(true) },
                     QuickInputItem(id: "ssh-refuse", label: "Cancel", description: "Do not connect", icon: .symbol("xmark")) { reply(false) },
                 ],
-                onCancel: { reply(false) }
+                onCancel: { reply(false) },
+                owner: owner
             ))
         }
+        guard hasTerminal(owner) else { return false }
         if trusted {
             do {
                 try RemoteSSH.shared.trust(prompt)
@@ -178,8 +187,9 @@ extension Workbench {
         return trusted
     }
 
-    func askForPassword(_ target: SSHTarget, attempt: Int) async -> String? {
-        await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
+    func askForPassword(_ target: SSHTarget, attempt: Int, for owner: UUID) async -> String? {
+        guard hasTerminal(owner) else { return nil }
+        return await withCheckedContinuation { (continuation: CheckedContinuation<String?, Never>) in
             let reply = Reply(continuation)
             showPick(.init(
                 title: attempt == 1 ? "Password for \(target)" : "Permission denied, please try again",
@@ -187,7 +197,8 @@ extension Workbench {
                 items: [],
                 onCancel: { reply(nil) },
                 onSubmitText: { reply($0) },
-                isSecure: true
+                isSecure: true,
+                owner: owner
             ))
         }
     }

@@ -37,6 +37,9 @@ public struct SSHSessionOptions: Sendable {
     /// on. Nil stops trying.
     public var password: @Sendable (_ attempt: Int) async -> String?
     public var term = "xterm-256color"
+    /// Seconds to wait for the host to finish the SSH handshake, up to its
+    /// host key. Time spent on the user's questions does not count.
+    public var handshakeTimeout: TimeInterval = 30
 
     public init(keys: [SSHUserKey], knownHosts: KnownHosts, trustHostKey: @escaping @Sendable (SSHHostKeyPrompt) async -> Bool, password: @escaping @Sendable (_ attempt: Int) async -> String?) {
         self.keys = keys
@@ -50,6 +53,7 @@ public struct SSHSessionOptions: Sendable {
 /// OpenSSH's for anyone who knows ssh.
 public enum SSHConnectionError: Error, Equatable, LocalizedError {
     case unreachable(String)
+    case timedOut
     case hostKeyChanged(host: String, keyType: String, fingerprint: String, known: [String])
     case hostKeyRevoked(host: String, fingerprint: String)
     case hostKeyNotTrusted
@@ -63,6 +67,8 @@ public enum SSHConnectionError: Error, Equatable, LocalizedError {
         switch self {
         case .unreachable(let reason):
             "Could not reach the host: \(reason)."
+        case .timedOut:
+            "The host took the connection but did not finish the SSH handshake in time."
         case let .hostKeyChanged(host, keyType, fingerprint, known):
             "The \(keyType) host key for \(host) has changed: it is \(fingerprint), and the known hosts list \(known.joined(separator: ", ")). Someone could be intercepting the connection, or the host was reinstalled. Tide did not connect. If the change is expected, run Remote-SSH: Forget Host Key... and connect again."
         case let .hostKeyRevoked(host, fingerprint):
@@ -98,10 +104,21 @@ public final class SSHShellSession: Sendable {
     /// Connects, checks the host key, logs in, and starts a shell on a pty
     /// of this size. The stream carries the shell's output and then one
     /// `.ended` with its exit status, or why it stopped.
+    /// Cancelling the calling task, as closing a terminal that is still
+    /// connecting does, closes the connection and asks no more questions.
     public static func open(_ target: SSHTarget, size: TerminalGridSize, options: SSHSessionOptions) async throws -> (SSHShellSession, AsyncStream<TerminalConnectionEvent>) {
+        let progress = ConnectProgress()
+        return try await withTaskCancellationHandler {
+            try await connect(target, size: size, options: options, progress: progress)
+        } onCancel: {
+            progress.cancel()
+        }
+    }
+
+    private static func connect(_ target: SSHTarget, size: TerminalGridSize, options: SSHSessionOptions, progress: ConnectProgress) async throws -> (SSHShellSession, AsyncStream<TerminalConnectionEvent>) {
         let failure = NIOLockedValueBox<(any Error)?>(nil)
-        let authenticator = Authenticator(user: target.user, keys: options.keys.map(\.nioKey), password: options.password)
-        let hostKeys = HostKeyChecker(target: target, knownHosts: options.knownHosts, trust: options.trustHostKey)
+        let authenticator = Authenticator(user: target.user, keys: options.keys.map(\.nioKey), password: options.password, progress: progress)
+        let hostKeys = HostKeyChecker(target: target, knownHosts: options.knownHosts, trust: options.trustHostKey, progress: progress)
         let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton)
             .connectTimeout(.seconds(15))
             .channelOption(ChannelOptions.socket(SocketOptionLevel(IPPROTO_TCP), TCP_NODELAY), value: 1)
@@ -122,6 +139,16 @@ public final class SSHShellSession: Sendable {
             connection = try await bootstrap.connect(host: target.host, port: target.port).get()
         } catch {
             throw SSHConnectionError.unreachable(String(describing: error))
+        }
+        guard progress.connected(connection) else { throw CancellationError() }
+        // A host that takes the connection but never gets to its host key is
+        // given up on.
+        _ = connection.eventLoop.scheduleTask(in: .milliseconds(Int64(options.handshakeTimeout * 1000))) {
+            guard !progress.hasCheckedHostKey else { return }
+            failure.withLockedValue { recorded in
+                if recorded == nil { recorded = SSHConnectionError.timedOut }
+            }
+            connection.close(promise: nil)
         }
 
         let (events, continuation) = AsyncStream<TerminalConnectionEvent>.makeStream()
@@ -152,6 +179,7 @@ public final class SSHShellSession: Sendable {
             started.fail(error)
             connection.close(promise: nil)
             continuation.finish()
+            if progress.isCancelled { throw CancellationError() }
             // The host key check and the login fail the connection, which then
             // fails the channel too; their reason is the one worth reporting.
             throw failure.withLockedValue { $0 } ?? error
@@ -190,11 +218,13 @@ private final class Authenticator: NIOSSHClientUserAuthenticationDelegate, Senda
 
     private let user: String
     private let password: @Sendable (Int) async -> String?
+    private let progress: ConnectProgress
     private let state: NIOLockedValueBox<State>
 
-    init(user: String, keys: [NIOSSHPrivateKey], password: @escaping @Sendable (Int) async -> String?) {
+    init(user: String, keys: [NIOSSHPrivateKey], password: @escaping @Sendable (Int) async -> String?, progress: ConnectProgress) {
         self.user = user
         self.password = password
+        self.progress = progress
         state = NIOLockedValueBox(State(keys: keys))
     }
 
@@ -214,8 +244,14 @@ private final class Authenticator: NIOSSHClientUserAuthenticationDelegate, Senda
             return
         }
         let password = self.password
+        let progress = self.progress
         Task {
-            guard let typed = await password(attempt) else {
+            guard !progress.isCancelled else {
+                nextChallengePromise.fail(CancellationError())
+                return
+            }
+            // A password typed after the terminal closed goes nowhere.
+            guard let typed = await password(attempt), !progress.isCancelled else {
                 nextChallengePromise.fail(SSHConnectionError.authenticationFailed(user: user))
                 return
             }
@@ -230,14 +266,17 @@ private final class HostKeyChecker: NIOSSHClientServerAuthenticationDelegate, Se
     private let target: SSHTarget
     private let knownHosts: KnownHosts
     private let trust: @Sendable (SSHHostKeyPrompt) async -> Bool
+    private let progress: ConnectProgress
 
-    init(target: SSHTarget, knownHosts: KnownHosts, trust: @escaping @Sendable (SSHHostKeyPrompt) async -> Bool) {
+    init(target: SSHTarget, knownHosts: KnownHosts, trust: @escaping @Sendable (SSHHostKeyPrompt) async -> Bool, progress: ConnectProgress) {
         self.target = target
         self.knownHosts = knownHosts
         self.trust = trust
+        self.progress = progress
     }
 
     func validateHostKey(hostKey: NIOSSHPublicKey, validationCompletePromise: EventLoopPromise<Void>) {
+        progress.checkedHostKey()
         guard let parts = KnownHosts.split(openSSHKey: String(openSSHPublicKey: hostKey)), let fingerprint = KnownHosts.fingerprint(parts.key) else {
             validationCompletePromise.fail(SSHConnectionError.unreadableHostKey)
             return
@@ -253,14 +292,57 @@ private final class HostKeyChecker: NIOSSHClientServerAuthenticationDelegate, Se
             validationCompletePromise.fail(SSHConnectionError.hostKeyChanged(host: name, keyType: prompt.displayType, fingerprint: fingerprint, known: known))
         case .unknown:
             let trust = self.trust
+            let progress = self.progress
             Task {
-                if await trust(prompt) {
+                guard !progress.isCancelled else {
+                    validationCompletePromise.fail(CancellationError())
+                    return
+                }
+                if await trust(prompt), !progress.isCancelled {
                     validationCompletePromise.succeed(())
                 } else {
                     validationCompletePromise.fail(SSHConnectionError.hostKeyNotTrusted)
                 }
             }
         }
+    }
+}
+
+/// How far a connection got: the channel, for cancelling it, and whether the
+/// host got as far as its host key, for the handshake timeout.
+private final class ConnectProgress: Sendable {
+    private struct State {
+        var cancelled = false
+        var connection: (any Channel)?
+        var hostKeyChecked = false
+    }
+
+    private let state = NIOLockedValueBox(State())
+
+    var isCancelled: Bool { state.withLockedValue { $0.cancelled } }
+    var hasCheckedHostKey: Bool { state.withLockedValue { $0.hostKeyChecked } }
+
+    func cancel() {
+        let connection = state.withLockedValue { state -> (any Channel)? in
+            state.cancelled = true
+            return state.connection
+        }
+        connection?.close(promise: nil)
+    }
+
+    /// Keeps the new connection; false, after closing it, if the attempt was
+    /// cancelled while it was being made.
+    func connected(_ connection: any Channel) -> Bool {
+        let cancelled = state.withLockedValue { state -> Bool in
+            state.connection = connection
+            return state.cancelled
+        }
+        if cancelled { connection.close(promise: nil) }
+        return !cancelled
+    }
+
+    func checkedHostKey() {
+        state.withLockedValue { $0.hostKeyChecked = true }
     }
 }
 

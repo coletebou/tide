@@ -8,7 +8,7 @@ import UIKit
 /// SSH host. The session wires them together and knows neither's type.
 @Observable
 final class TerminalSession: Identifiable {
-    let id = UUID()
+    let id: UUID
     var title: String
     /// Shows the terminal's text as a read-only view instead of the terminal.
     private(set) var showsAccessibleBuffer = false
@@ -19,7 +19,8 @@ final class TerminalSession: Identifiable {
     /// Set once the shell has ended; the next key press closes the terminal.
     @ObservationIgnored private var ended = false
 
-    init(connection: any TerminalConnection, title: String, workbench: Workbench, engine: any TerminalEngine = SwiftTermEngine()) {
+    init(id: UUID = UUID(), connection: any TerminalConnection, title: String, workbench: Workbench, engine: any TerminalEngine = SwiftTermEngine()) {
+        self.id = id
         self.connection = connection
         self.title = title
         self.workbench = workbench
@@ -121,6 +122,7 @@ final class TerminalManager {
     }
 
     func close(_ session: TerminalSession) {
+        cancelPrompt(of: session)
         session.terminate()
         sessions.removeAll { $0.id == session.id }
         if activeSessionID == session.id { activeSessionID = sessions.last?.id }
@@ -128,12 +130,20 @@ final class TerminalManager {
 
     func clearActive() { activeSession?.clear() }
 
+    /// A question only this terminal's connection is waiting on goes with it.
+    private func cancelPrompt(of session: TerminalSession) {
+        if let prompt = workbench?.quickInput, prompt.pickList?.owner == session.id { prompt.cancel() }
+    }
+
     func apply(theme: Theme, settings: SettingsStore) {
         for session in sessions { session.apply(theme: theme, settings: settings) }
     }
 
     func workspaceChanged() {
-        for session in sessions { session.terminate() }
+        for session in sessions {
+            cancelPrompt(of: session)
+            session.terminate()
+        }
         sessions = []
         activeSessionID = nil
     }

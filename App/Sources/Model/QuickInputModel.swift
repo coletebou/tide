@@ -45,6 +45,8 @@ final class QuickInputModel {
         /// Turns the typed text into a first row, such as Remote-SSH's
         /// "user@host", so a new entry wins over a list item it resembles.
         var textItem: ((String) -> QuickInputItem?)?
+        /// The terminal a prompt is for; closing it cancels the prompt.
+        var owner: UUID?
     }
 
     var text: String { didSet { refresh() } }
