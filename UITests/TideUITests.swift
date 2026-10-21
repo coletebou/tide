@@ -35,7 +35,8 @@ final class TideUITests: TideUITestCase {
         // A tap outside closes the palette, as on a touch screen. Escape is not
         // checked: XCTest detaches the simulator's hardware keyboard during UI
         // tests, and key commands such as the palette's Escape need one.
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)).tap()
+        // Mid-editor: below the palette, above the on-screen keyboard.
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
         require(app, "a tap outside to close the palette") { !app.paletteField.exists }
     }
 
