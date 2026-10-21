@@ -38,7 +38,6 @@ struct QuickInputView: View {
                         LazyVStack(spacing: 0) {
                             ForEach(Array(model.items.enumerated()), id: \.element.id) { index, item in
                                 row(item, isSelected: index == model.selectedIndex)
-                                    .id(index)
                                     .onTapGesture {
                                         model.selectedIndex = index
                                         model.acceptSelected()
@@ -47,7 +46,11 @@ struct QuickInputView: View {
                         }
                     }
                     .frame(maxHeight: 440)
-                    .onChange(of: model.selectedIndex) { _, index in proxy.scrollTo(index) }
+                    // Rows have one identity, the item's id: a second one by
+                    // index left the lazy stack showing stale and missing rows.
+                    .onChange(of: model.selectedIndex) { _, index in
+                        if model.items.indices.contains(index) { proxy.scrollTo(model.items[index].id) }
+                    }
                 }
                 .padding(.bottom, 6)
             }
