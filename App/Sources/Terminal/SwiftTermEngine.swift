@@ -78,7 +78,11 @@ final class TerminalDelegateBridge: NSObject, TerminalViewDelegate {
     func clipboardCopy(source: TerminalView, content: Data) {
         if let text = String(data: content, encoding: .utf8) { UIPasteboard.general.string = text }
     }
-    func clipboardRead(source: TerminalView) -> Data? { UIPasteboard.general.string?.data(using: .utf8) }
+    /// OSC 52 can ask for the clipboard too, and the answer goes to the
+    /// program in the terminal, which may run on another machine: a host
+    /// could read a key or password copied here. Reads are refused; writes,
+    /// such as a remote vim copying a selection, still reach the clipboard.
+    func clipboardRead(source: TerminalView) -> Data? { nil }
     func iTermContent(source: TerminalView, content: ArraySlice<UInt8>) {}
     func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 }
