@@ -127,10 +127,18 @@ public final class VirtualShell {
             result = execute(name, Array(words.dropFirst()), stdin: input)
             if let redirect {
                 do {
-                    let path = try resolve(redirect.path)
-                    let existing = redirect.append ? (try? String(contentsOf: url(for: path), encoding: .utf8)) ?? "" : ""
-                    try FileManager.default.createDirectory(at: url(for: path).deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try (existing + result.stdout).write(to: url(for: path), atomically: true, encoding: .utf8)
+                    let file = url(for: try resolve(redirect.path))
+                    let output = Data(result.stdout.utf8)
+                    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if redirect.append, FileManager.default.fileExists(atPath: file.path) {
+                        // Append bytes, as a shell does: the file may not be UTF-8 text at all.
+                        let handle = try FileHandle(forWritingTo: file)
+                        defer { try? handle.close() }
+                        try handle.seekToEnd()
+                        try handle.write(contentsOf: output)
+                    } else {
+                        try output.write(to: file, options: .atomic)
+                    }
                     result.stdout = ""
                 } catch {
                     result.stderr += "tide-sh: \(redirect.path): \(describe(error))\n"
