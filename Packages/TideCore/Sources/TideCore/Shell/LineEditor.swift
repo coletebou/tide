@@ -29,11 +29,16 @@ public struct LineEditor: Sendable {
     public var line: String { String(buffer) }
 
     public mutating func reset() {
+        clearLine()
+        pending = []
+    }
+
+    /// Starts a new line, keeping input bytes that are still to be processed.
+    private mutating func clearLine() {
         buffer = []
         cursor = 0
         historyIndex = nil
         draft = []
-        pending = []
     }
 
     /// Processes input bytes; `history` is oldest first.
@@ -72,17 +77,19 @@ public struct LineEditor: Sendable {
                 }
                 continue
             case 0x0D, 0x0A:
+                // CR LF, as in pasted Windows text, is one Enter.
+                if byte == 0x0A, index > 0, pending[index - 1] == 0x0D { break }
                 output += "\r\n"
                 flush()
                 events.append(.submit(line))
-                reset()
+                clearLine()
             case 0x7F, 0x08:
                 output += backspace()
             case 0x03:
                 output += "^C\r\n"
                 flush()
                 events.append(.interrupt)
-                reset()
+                clearLine()
             case 0x0C:
                 flush()
                 events.append(.clearScreen)

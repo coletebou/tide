@@ -565,10 +565,12 @@ struct CSSTokenizer: LineTokenizer {
         return (sink.tokens, .css(depth: depth, inComment: false))
     }
 
+    /// The end of the word at `start`, taking at least one unit but never
+    /// going past the line: after a sigil that ends the line, that is `start`.
     private func wordEnd(_ line: [UInt16], from start: Int) -> Int {
         var end = start
         while end < line.count, CodeUnit.isIdentifierPart(line[end]) || line[end] == CodeUnit.minus { end += 1 }
-        return max(end, start + 1)
+        return min(max(end, start + 1), line.count)
     }
 
     /// Inside a block, `name:` followed by a value (not a nested selector like `&:hover {`).

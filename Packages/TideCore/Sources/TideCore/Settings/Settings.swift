@@ -169,8 +169,8 @@ public struct SettingsStore: Equatable, Sendable {
         overrides[key] = nil
     }
 
-    /// Parses `settings.json` (JSONC). Values of the wrong type are reported
-    /// and ignored.
+    /// Parses `settings.json` (JSONC). Values of the wrong type, and numbers
+    /// outside a setting's range, are reported and ignored.
     public static func parse(_ text: String) -> (store: SettingsStore, problems: [String]) {
         var store = SettingsStore()
         var problems: [String] = []
@@ -182,17 +182,27 @@ public struct SettingsStore: Equatable, Sendable {
         }
         for (key, raw) in object {
             if let descriptor = SettingsRegistry.byKey[key] {
-                if let value = SettingValue(json: raw, like: descriptor.defaultValue) {
-                    store.set(key, value)
-                } else {
+                guard let value = SettingValue(json: raw, like: descriptor.defaultValue) else {
                     problems.append("Incorrect type for '\(key)'.")
+                    continue
                 }
+                // Out of range includes values such as 1e100, which int(_:) cannot convert.
+                if case .number(let number) = value, let range = descriptor.range, !range.contains(number) {
+                    problems.append("'\(key)' must be between \(Self.format(range.lowerBound)) and \(Self.format(range.upperBound)).")
+                    continue
+                }
+                store.set(key, value)
             } else if let data = try? JSONSerialization.data(withJSONObject: raw, options: [.fragmentsAllowed, .sortedKeys]),
                       let fragment = String(data: data, encoding: .utf8) {
                 store.unknownJSON[key] = fragment
             }
         }
         return (store, problems)
+    }
+
+    /// A range bound as written in settings.json: `8`, not `8.0`.
+    private static func format(_ bound: Double) -> String {
+        bound.rounded() == bound ? String(Int(bound)) : String(bound)
     }
 
     /// The overrides as a pretty-printed `settings.json`.

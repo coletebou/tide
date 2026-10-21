@@ -97,18 +97,30 @@ struct TextFileCodecTests {
         let bom = try #require(TextFileCodec.decode(Data([0xEF, 0xBB, 0xBF]) + Data("hé".utf8)))
         #expect(bom.text == "hé")
         #expect(bom.format.encoding == .utf8BOM)
-        let utf16 = TextFileCodec.encode("hi\n", format: TextFileFormat(encoding: .utf16LE, lineEnding: .lf))
+        let utf16 = try TextFileCodec.encode("hi\n", format: TextFileFormat(encoding: .utf16LE, lineEnding: .lf))
         #expect(TextFileCodec.decode(utf16)?.text == "hi\n")
         #expect(TextFileCodec.decode(Data([0x89, 0x50, 0x4E, 0x47, 0x00, 0x01])) == nil)
         #expect(TextFileCodec.decode(Data([0xE9, 0x74, 0xE9]))?.format.encoding == .windows1252)
     }
 
-    @Test func roundTripsEveryEncoding() {
+    @Test func roundTripsEveryEncoding() throws {
         for encoding in TextEncoding.allCases {
             let format = TextFileFormat(encoding: encoding, lineEnding: .lf)
             let text = encoding == .windows1252 ? "caf\u{E9}\n" : "caf\u{E9} \u{1F30A}\n"
-            #expect(TextFileCodec.decode(TextFileCodec.encode(text, format: format))?.text == text, "\(encoding)")
+            let data = try TextFileCodec.encode(text, format: format)
+            #expect(TextFileCodec.decode(data)?.text == text, "\(encoding)")
         }
+    }
+
+    /// Saving never drops text: a character the file's encoding cannot hold
+    /// is an error, not a silent `?`.
+    @Test func refusesLossyEncoding() throws {
+        let format = TextFileFormat(encoding: .windows1252, lineEnding: .lf)
+        #expect(try TextFileCodec.encode("caf\u{E9} \u{20AC}\n", format: format) == Data([0x63, 0x61, 0x66, 0xE9, 0x20, 0x80, 0x0A]))
+        #expect(throws: WorkspaceError.unrepresentableCharacter("\u{2713}", .windows1252)) {
+            try TextFileCodec.encode("done \u{2713}\n", format: format)
+        }
+        #expect(WorkspaceError.unrepresentableCharacter("\u{2713}", .windows1252).errorDescription == "'\u{2713}' cannot be saved in Western (Windows 1252).")
     }
 
     @Test func normalizesLineEndings() {
@@ -166,5 +178,22 @@ struct WorkspaceSearchTests {
         }
         #expect(results.map(\.path) == ["src/a.swift"])
         #expect(results.first?.matches.first?.preview == "let needle = 1")
+    }
+
+    /// Commas inside `{...}` (and `[...]`) separate alternatives, not patterns, as in VS Code.
+    @Test func includePatternsKeepBraceAlternatives() async throws {
+        #expect(WorkspaceSearch.globs("*.{js,ts}, docs/**").map(\.pattern) == ["**/*.{js,ts}", "docs/**"])
+        #expect(WorkspaceSearch.globs("[,]x,y").map(\.pattern) == ["**/[,]x", "**/y"])
+        let workspace = try TemporaryWorkspace(["a.js": "needle\n", "lib/b.ts": "needle\n", "c.swift": "needle\n"])
+        var results: [FileSearchResult] = []
+        for try await result in WorkspaceSearch.search(root: workspace.url, query: SearchQuery(pattern: "needle", include: "*.{js,ts}")) {
+            results.append(result)
+        }
+        #expect(results.map(\.path).sorted() == ["a.js", "lib/b.ts"])
+        results = []
+        for try await result in WorkspaceSearch.search(root: workspace.url, query: SearchQuery(pattern: "needle", exclude: "*.{js,ts}")) {
+            results.append(result)
+        }
+        #expect(results.map(\.path) == ["c.swift"])
     }
 }

@@ -29,6 +29,8 @@ public enum WorkspaceError: Error, Equatable, LocalizedError {
     case notADirectory(String)
     case binaryFile(String)
     case unsupported(String)
+    /// Text the file's encoding cannot store, such as an emoji in a Windows-1252 file.
+    case unrepresentableCharacter(Character, TextEncoding)
 
     public var errorDescription: String? {
         switch self {
@@ -38,6 +40,7 @@ public enum WorkspaceError: Error, Equatable, LocalizedError {
         case .notADirectory(let path): "'\(path)' is not a folder."
         case .binaryFile(let path): "'\(path)' is a binary file."
         case .unsupported(let message): message
+        case .unrepresentableCharacter(let character, let encoding): "'\(character)' cannot be saved in \(encoding.label)."
         }
     }
 }

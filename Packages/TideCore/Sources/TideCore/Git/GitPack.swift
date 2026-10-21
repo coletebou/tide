@@ -158,6 +158,12 @@ final class GitPack: @unchecked Sendable {
 
 /// Git's delta format: a base size, a result size, then copy and insert instructions.
 enum GitDelta {
+    /// The largest result accepted. Git stores objects above
+    /// `core.bigFileThreshold` (512 MiB by default) without delta compression,
+    /// so a delta that rebuilds more did not come from git; repeated copies of
+    /// a small base could otherwise demand any amount of memory.
+    static let maximumResultSize = 512 << 20
+
     /// Rebuilds an object from its delta base and delta data.
     static func apply(_ delta: Data, to base: Data) throws -> Data {
         try delta.withUnsafeBytes { deltaBytes in
@@ -166,6 +172,9 @@ enum GitDelta {
                 let baseSize = try GitVarint.readLittleEndian(deltaBytes, at: &position)
                 guard baseSize == baseBytes.count else { throw GitError.corrupt("delta base size mismatch") }
                 let resultSize = try GitVarint.readLittleEndian(deltaBytes, at: &position)
+                guard resultSize <= maximumResultSize else {
+                    throw GitError.unsupported("a delta result of \(resultSize) bytes, above core.bigFileThreshold's 512 MiB default")
+                }
                 // Each instruction byte yields at most a whole base or 127 inserted bytes.
                 let bound = (deltaBytes.count - position).multipliedReportingOverflow(by: max(baseBytes.count, 0x7F))
                 guard bound.overflow || resultSize <= bound.partialValue else {

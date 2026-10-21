@@ -207,6 +207,104 @@ struct GitStatusTests {
         #expect(ours == (try sandbox.porcelainStatus(repository)))
     }
 
+    /// Git hashes work-tree files through its line-ending conversion (the
+    /// `text`, `eol` and `crlf` attributes, and `core.autocrlf`), so CRLF
+    /// files whose blobs hold LF are unchanged once their timestamps no
+    /// longer match the index.
+    @Test func hashesThroughLineEndingConversionLikeGit() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        // Committed before any attributes exist, so its blob keeps CRLF and text=auto leaves it alone.
+        try sandbox.write("old\r\nfile\r\n", to: "committed.auto", in: repository)
+        try sandbox.commitAll("crlf blob", in: repository)
+        try sandbox.write("""
+            [attr]windows text eol=crlf
+            *.text text
+            *.crlf eol=crlf
+            *.auto text=auto
+            *.legacy crlf
+            *.macro windows
+            *.binary binary
+            *.none -text
+
+            """, to: ".gitattributes", in: repository)
+        try sandbox.write("*.text -text\n*.auto !text\n", to: "raw/.gitattributes", in: repository)
+        try sandbox.write("info.text -text\n", to: ".git/info/attributes", in: repository)
+        let names = ["a.text", "changed.text", "b.crlf", "c.auto", "d.legacy", "e.macro", "f.binary", "g.none", "raw/h.text", "raw/i.auto", "info.text", "plain.txt"]
+        for name in names {
+            try sandbox.write("one\r\ntwo\r\n", to: name, in: repository)
+        }
+        try sandbox.write("lone\rcarriage return\r\n", to: "lone.text", in: repository)
+        try sandbox.write(Data("nul\0byte\r\n".utf8), to: "nul.auto", in: repository)
+        try sandbox.commitAll("crlf work tree", in: repository)
+        // Same size, different content.
+        try sandbox.write("uno\r\ntwo\r\n", to: "changed.text", in: repository)
+        try Self.touch(names + ["committed.auto", "lone.text", "nul.auto"], in: repository)
+
+        #expect(try sandbox.swiftStatus(repository) == sandbox.porcelainStatus(repository))
+        #expect(try sandbox.swiftStatus(repository) == [" M changed.text"])
+
+        // core.autocrlf converts files that no attribute covers, like text=auto.
+        let autoCRLF = try sandbox.makeRepository("autocrlf")
+        try sandbox.git("config", "core.autocrlf", "true", in: autoCRLF)
+        try sandbox.write("one\r\ntwo\r\n", to: "file.txt", in: autoCRLF)
+        try sandbox.commitAll("autocrlf", in: autoCRLF)
+        try Self.touch(["file.txt"], in: autoCRLF)
+        #expect(try sandbox.swiftStatus(autoCRLF) == sandbox.porcelainStatus(autoCRLF))
+        #expect(try sandbox.swiftStatus(autoCRLF).isEmpty)
+    }
+
+    /// Attribute lookup agrees with `git check-attr --all`: precedence between
+    /// files and between lines, macros and where they may be defined, `!name`,
+    /// quoted and folder patterns, and lines git rejects.
+    @Test func attributesMatchCheckAttr() throws {
+        let sandbox = try GitSandbox()
+        let repository = try sandbox.makeRepository()
+        try sandbox.write("""
+            [attr]mine text eol=crlf -diff
+            *.txt text
+            *.txt -text eol=lf
+            "with space.md" mine
+            docs/** linguist-documentation
+            *.bin binary
+            *.both binary text
+            *.inv text in/valid
+            build/ text
+            *.dat !text crlf=input
+
+            """, to: ".gitattributes", in: repository)
+        try sandbox.write("*.txt text\n[attr]nested text\n*.md -mine\n", to: "docs/.gitattributes", in: repository)
+        try sandbox.write("special.txt -eol\n", to: ".git/info/attributes", in: repository)
+        let paths = ["a.txt", "with space.md", "docs/guide.md", "docs/notes.txt", "x.bin", "y.both", "z.inv", "special.txt", "build/out.txt", "q.dat"]
+        let output = String(decoding: try sandbox.gitData(["check-attr", "--all", "--"] + paths, in: repository), as: UTF8.self)
+        let theirs = Set(output.split(separator: "\n").map(String.init))
+
+        let opened = try GitRepository.opened(repository)
+        let attributes = opened.attributes(config: opened.config(), index: try opened.index())
+        var ours = Set<String>()
+        for path in paths {
+            for (name, state) in attributes.states(forFile: path) {
+                switch state {
+                case .set: ours.insert("\(path): \(name): set")
+                case .unset: ours.insert("\(path): \(name): unset")
+                case .value(let value): ours.insert("\(path): \(name): \(value)")
+                case .unspecified: break
+                }
+            }
+        }
+        #expect(ours == theirs)
+        #expect(theirs.contains("with space.md: eol: crlf"))
+        #expect(theirs.contains("y.both: text: set"))
+    }
+
+    /// Moves modification times into the past, so status must read the files.
+    static func touch(_ paths: [String], in repository: URL) throws {
+        let past = Date().addingTimeInterval(-3600)
+        for path in paths {
+            try FileManager.default.setAttributes([.modificationDate: past], ofItemAtPath: repository.appendingPathComponent(path).path)
+        }
+    }
+
     @Test func statusWorksWithIndexVersion4AndPackedHistory() throws {
         let sandbox = try GitSandbox()
         let repository = try sandbox.makeRepository()

@@ -156,6 +156,17 @@ struct SettingsTests {
         #expect(reparsed == store)
     }
 
+    /// A number outside the setting's range is reported and ignored, like a
+    /// value of the wrong type; huge ones would otherwise trap in `int(_:)`.
+    @Test func outOfRangeNumbersKeepTheDefault() {
+        let (store, problems) = SettingsStore.parse(#"{"editor.tabSize": 1e100, "editor.fontSize": -3, "files.autoSaveDelay": 2000}"#)
+        #expect(store.number("editor.tabSize") == 4)
+        #expect(store.int("editor.tabSize") == 4)
+        #expect(store.number("editor.fontSize") == 14)
+        #expect(store.int("files.autoSaveDelay") == 2000)
+        #expect(Set(problems) == ["'editor.tabSize' must be between 1 and 8.", "'editor.fontSize' must be between 8 and 36."])
+    }
+
     @Test func settingTheDefaultRemovesTheOverride() {
         var store = SettingsStore()
         store.set("editor.fontSize", .number(18))

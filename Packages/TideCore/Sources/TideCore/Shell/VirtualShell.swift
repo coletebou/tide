@@ -127,10 +127,18 @@ public final class VirtualShell {
             result = execute(name, Array(words.dropFirst()), stdin: input)
             if let redirect {
                 do {
-                    let path = try resolve(redirect.path)
-                    let existing = redirect.append ? (try? String(contentsOf: url(for: path), encoding: .utf8)) ?? "" : ""
-                    try FileManager.default.createDirectory(at: url(for: path).deletingLastPathComponent(), withIntermediateDirectories: true)
-                    try (existing + result.stdout).write(to: url(for: path), atomically: true, encoding: .utf8)
+                    let file = url(for: try resolve(redirect.path))
+                    let output = Data(result.stdout.utf8)
+                    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    if redirect.append, FileManager.default.fileExists(atPath: file.path) {
+                        // Append bytes, as a shell does: the file may not be UTF-8 text at all.
+                        let handle = try FileHandle(forWritingTo: file)
+                        defer { try? handle.close() }
+                        try handle.seekToEnd()
+                        try handle.write(contentsOf: output)
+                    } else {
+                        try output.write(to: file, options: .atomic)
+                    }
                     result.stdout = ""
                 } catch {
                     result.stderr += "tide-sh: \(redirect.path): \(describe(error))\n"
@@ -371,7 +379,9 @@ public final class VirtualShell {
 
     private func rmdir(_ args: [String]) throws -> CommandResult {
         for target in args {
-            let directory = url(for: try resolve(target))
+            let path = try resolve(target)
+            guard !path.isEmpty else { return CommandResult(stderr: "rmdir: refusing to remove the workspace root\n", exitCode: 1) }
+            let directory = url(for: path)
             guard (try FileManager.default.contentsOfDirectory(atPath: directory.path)).isEmpty else {
                 return CommandResult(stderr: "rmdir: \(target): Directory not empty\n", exitCode: 1)
             }
@@ -381,27 +391,98 @@ public final class VirtualShell {
     }
 
     private func mvOrCp(_ args: [String], copy: Bool) throws -> CommandResult {
+        let name = copy ? "cp" : "mv"
         let operands = args.filter { !$0.hasPrefix("-") }
-        guard operands.count >= 2 else { return CommandResult(stderr: "usage: \(copy ? "cp" : "mv") source ... target\n", exitCode: 64) }
-        let destination = try resolve(operands.last!)
-        var isDirectory: ObjCBool = false
-        let destinationIsDirectory = FileManager.default.fileExists(atPath: url(for: destination).path, isDirectory: &isDirectory) && isDirectory.boolValue
-        if operands.count > 2, !destinationIsDirectory {
-            return CommandResult(stderr: "\(copy ? "cp" : "mv"): \(operands.last!) is not a directory\n", exitCode: 1)
+        guard operands.count >= 2, let destinationOperand = operands.last else {
+            return CommandResult(stderr: "usage: \(name) source ... target\n", exitCode: 64)
         }
+        let destination = try resolve(destinationOperand)
+        let destinationIsDirectory = isDirectory(destination) == true
+        if operands.count > 2, !destinationIsDirectory {
+            return CommandResult(stderr: "\(name): \(destinationOperand) is not a directory\n", exitCode: 1)
+        }
+        var errors = ""
         for source in operands.dropLast() {
             let sourcePath = try resolve(source)
-            let target = destinationIsDirectory ? WorkspacePath.join(destination, WorkspacePath.name(of: sourcePath)) : destination
-            if FileManager.default.fileExists(atPath: url(for: target).path) {
-                try FileManager.default.removeItem(at: url(for: target))
+            // Check everything before changing anything, so a failed copy or move never costs the destination.
+            guard !sourcePath.isEmpty else {
+                errors += "\(name): refusing to \(copy ? "copy" : "move") the workspace root\n"
+                continue
             }
-            if copy {
-                try FileManager.default.copyItem(at: url(for: sourcePath), to: url(for: target))
+            guard let sourceIsDirectory = isDirectory(sourcePath) else {
+                errors += "\(name): \(source): No such file or directory\n"
+                continue
+            }
+            let fileName = WorkspacePath.name(of: sourcePath)
+            let target = destinationIsDirectory ? WorkspacePath.join(destination, fileName) : destination
+            let shownTarget = destinationIsDirectory
+                ? (destinationOperand.hasSuffix("/") ? destinationOperand : destinationOperand + "/") + fileName
+                : destinationOperand
+            let targetIsDirectory = isDirectory(target)
+            let sameFile = target == sourcePath || isSameFile(sourcePath, target)
+            // On a case-insensitive volume, `mv a.txt A.txt` renames a file onto itself.
+            let isCaseRename = !copy && sameFile && target != sourcePath && target.lowercased() == sourcePath.lowercased()
+            if sameFile, !isCaseRename {
+                errors += copy ? "cp: \(shownTarget) and \(source) are identical (not copied).\n" : "mv: \(source) and \(shownTarget) are identical\n"
+                continue
+            }
+            if sourceIsDirectory, WorkspacePath.isDescendant(target, of: sourcePath) {
+                errors += "\(name): cannot \(copy ? "copy" : "move") \(source) into itself\n"
+                continue
+            }
+            if !isCaseRename, let targetIsDirectory, targetIsDirectory != sourceIsDirectory {
+                errors += "\(name): \(shownTarget): \(targetIsDirectory ? "Is a directory" : "Not a directory")\n"
+                continue
+            }
+            let sourceURL = url(for: sourcePath)
+            let targetURL = url(for: target)
+            if !copy {
+                // rename(2) replaces a file or an empty folder in one step, and otherwise changes nothing.
+                if rename(sourceURL.path, targetURL.path) != 0 {
+                    let code = errno
+                    // Across volumes, only a move to a new name falls back to copying and deleting.
+                    guard code == EXDEV, targetIsDirectory == nil else {
+                        errors += "mv: rename \(source) to \(shownTarget): \(String(cString: strerror(code)))\n"
+                        continue
+                    }
+                    try FileManager.default.moveItem(at: sourceURL, to: targetURL)
+                }
+            } else if targetIsDirectory == nil {
+                try FileManager.default.copyItem(at: sourceURL, to: targetURL)
             } else {
-                try FileManager.default.moveItem(at: url(for: sourcePath), to: url(for: target))
+                // Copy beside the destination, then swap the copy in.
+                let staged = targetURL.deletingLastPathComponent().appendingPathComponent(".tide-copy-\(UUID().uuidString)")
+                try FileManager.default.copyItem(at: sourceURL, to: staged)
+                do {
+                    _ = try FileManager.default.replaceItemAt(targetURL, withItemAt: staged, options: .usingNewMetadataOnly)
+                } catch {
+                    try? FileManager.default.removeItem(at: staged)
+                    throw error
+                }
             }
         }
-        return CommandResult()
+        return CommandResult(stderr: errors, exitCode: errors.isEmpty ? 0 : 1)
+    }
+
+    /// Whether `path` is a folder (following symbolic links), or nil when nothing is there.
+    private func isDirectory(_ path: String) -> Bool? {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: url(for: path).path, isDirectory: &isDirectory) else { return nil }
+        return isDirectory.boolValue
+    }
+
+    /// Whether two paths reach the same file, through symbolic links, hard
+    /// links or a case-insensitive volume.
+    private func isSameFile(_ first: String, _ second: String) -> Bool {
+        func identity(_ path: String) -> [NSNumber]? {
+            let resolved = url(for: path).resolvingSymlinksInPath().path
+            guard let attributes = try? FileManager.default.attributesOfItem(atPath: resolved),
+                  let volume = attributes[.systemNumber] as? NSNumber,
+                  let file = attributes[.systemFileNumber] as? NSNumber else { return nil }
+            return [volume, file]
+        }
+        guard let first = identity(first), let second = identity(second) else { return false }
+        return first == second
     }
 
     private func headTail(_ args: [String], stdin: String?, head: Bool) throws -> CommandResult {
@@ -416,6 +497,11 @@ public final class VirtualShell {
             } else {
                 files.append(arg)
             }
+        }
+        if count < 0 {
+            // head(1) refuses a negative count; tail(1) counts from the end either way.
+            guard !head else { return CommandResult(stderr: "head: illegal line count -- \(count)\n", exitCode: 1) }
+            count = Int(clamping: count.magnitude)
         }
         let text = files.isEmpty ? (stdin ?? "") : try cat(files, stdin: nil).stdout
         var lines = text.components(separatedBy: "\n")
@@ -825,8 +911,10 @@ enum ShellLexer {
                 }
                 if !closed { throw LexError.unterminatedQuote }
             case "\\":
+                // A backslash quotes the next character, so `\*` is not a glob.
                 if index + 1 < characters.count { current.append(characters[index + 1]) }
                 hasWord = true
+                quoted = true
                 index += 2
             case "$":
                 current += expandVariable(at: &index)

@@ -209,6 +209,13 @@ struct TokenizerTests {
             ("python", "lambda x: [y for y in range(10) if y % 2 == 0]  # '''"),
             ("html", "<input type=text disabled /><!-- a --><b>c</b>"),
             ("markdown", "1. **a** `b` _c_ ![d](e) <span>f</span>"),
+            // A sigil at the very end of a line has no word after it.
+            ("css", "@"),
+            ("css", "a { color: #"),
+            ("css", "a { margin: 0 !"),
+            ("scss", "$"),
+            ("less", "a { b: @"),
+            ("html", "<style>@</style>"),
         ]
         for (language, line) in samples {
             let tokenizer = LanguageRegistry.shared.tokenizer(for: LanguageRegistry.shared.language(id: language)!)

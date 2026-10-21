@@ -28,14 +28,16 @@ extension GitRepository {
         }
         var slop = 5
         while let id = walk.pop() {
-            if walk.nonStaleCount == 0 {
-                if slop == 0 { break }
-                slop -= 1
-            }
             let flags = walk.flags[id] ?? 0
             for parent in try load(id)?.parents ?? [] {
                 guard let info = try load(parent) else { continue }
                 walk.mark(parent, flags, time: info.time)
+            }
+            // Check after queuing the parents: popping the last one-sided commit
+            // leaves the count at zero even when its parents continue that history.
+            if walk.nonStaleCount == 0 {
+                if slop == 0 { break }
+                slop -= 1
             }
         }
         var ahead = 0
