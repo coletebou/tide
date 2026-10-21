@@ -138,7 +138,7 @@ final class CodeTextView: UITextView {
     weak var controller: EditorController?
 
     override var keyCommands: [UIKeyCommand]? {
-        (super.keyCommands ?? []) + (controller?.keyCommands ?? [])
+        (super.keyCommands ?? []) + editorKeyCommands
     }
 
     override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
@@ -146,6 +146,8 @@ final class CodeTextView: UITextView {
         if action == #selector(toggleBoldface(_:)) || action == #selector(toggleItalics(_:)) || action == #selector(toggleUnderline(_:)) {
             return false
         }
+        // Escape is only claimed while there is a find widget to close.
+        if action == #selector(keyEscape) { return controller?.find.isVisible == true }
         return super.canPerformAction(action, withSender: sender)
     }
 
@@ -154,6 +156,57 @@ final class CodeTextView: UITextView {
         if became { controller?.onFocus?() }
         return became
     }
+
+    // MARK: - Keyboard shortcuts
+
+    // UIKit looks for a key command's action along the responder chain from the
+    // first responder. The controller is not a responder, so the actions are
+    // methods of this view that forward to it.
+    private lazy var editorKeyCommands: [UIKeyCommand] = {
+        func command(_ title: String, _ input: String, _ modifiers: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
+            let command = UIKeyCommand(title: title, action: action, input: input, modifierFlags: modifiers)
+            command.wantsPriorityOverSystemBehavior = true
+            return command
+        }
+        return [
+            command("Toggle Line Comment", "/", .command, #selector(keyToggleComment)),
+            command("Indent Line", "]", .command, #selector(keyIndent)),
+            command("Outdent Line", "[", .command, #selector(keyOutdent)),
+            command("Outdent", "\t", .shift, #selector(keyOutdent)),
+            command("Move Line Up", UIKeyCommand.inputUpArrow, .alternate, #selector(keyMoveUp)),
+            command("Move Line Down", UIKeyCommand.inputDownArrow, .alternate, #selector(keyMoveDown)),
+            command("Copy Line Down", UIKeyCommand.inputDownArrow, [.alternate, .shift], #selector(keyDuplicate)),
+            command("Delete Line", "k", [.command, .shift], #selector(keyDeleteLines)),
+            command("Insert Line Below", "\r", .command, #selector(keyInsertBelow)),
+            command("Insert Line Above", "\r", [.command, .shift], #selector(keyInsertAbove)),
+            command("Go to Bracket", "\\", [.command, .shift], #selector(keyJumpToBracket)),
+            command("Expand Line Selection", "l", .command, #selector(keySelectLine)),
+            command("Add Selection to Next Find Match", "d", .command, #selector(keySelectNext)),
+            command("Find", "f", .command, #selector(keyFind)),
+            command("Replace", "f", [.command, .alternate], #selector(keyReplace)),
+            command("Find Next", "g", .command, #selector(keyFindNext)),
+            command("Find Previous", "g", [.command, .shift], #selector(keyFindPrevious)),
+            command("Close Find", UIKeyCommand.inputEscape, [], #selector(keyEscape)),
+        ]
+    }()
+
+    @objc private func keyToggleComment() { controller?.toggleComment() }
+    @objc private func keyIndent() { controller?.indentLines() }
+    @objc private func keyOutdent() { controller?.outdentLines() }
+    @objc private func keyMoveUp() { controller?.moveLines(up: true) }
+    @objc private func keyMoveDown() { controller?.moveLines(up: false) }
+    @objc private func keyDuplicate() { controller?.duplicateLines() }
+    @objc private func keyDeleteLines() { controller?.deleteLines() }
+    @objc private func keyInsertBelow() { controller?.insertLine(above: false) }
+    @objc private func keyInsertAbove() { controller?.insertLine(above: true) }
+    @objc private func keyJumpToBracket() { controller?.jumpToBracket() }
+    @objc private func keySelectLine() { controller?.selectLine() }
+    @objc private func keySelectNext() { controller?.selectNextOccurrence() }
+    @objc private func keyFind() { controller?.showFind(replace: false) }
+    @objc private func keyReplace() { controller?.showFind(replace: true) }
+    @objc private func keyFindNext() { if controller?.find.isVisible == true { controller?.find.next() } else { controller?.showFind(replace: false) } }
+    @objc private func keyFindPrevious() { if controller?.find.isVisible == true { controller?.find.previous() } else { controller?.showFind(replace: false) } }
+    @objc private func keyEscape() { if controller?.find.isVisible == true { controller?.hideFind() } }
 }
 
 /// Hosts the gutter, text view, minimap and sticky scroll header.
@@ -672,52 +725,6 @@ final class EditorController: NSObject, UITextViewDelegate {
               let position = textView.position(from: direction == .left || direction == .up ? range.start : range.end, in: direction, offset: 1) else { return }
         textView.selectedTextRange = textView.textRange(from: position, to: position)
     }
-
-    lazy var keyCommands: [UIKeyCommand] = {
-        func command(_ title: String, _ input: String, _ modifiers: UIKeyModifierFlags, _ action: Selector) -> UIKeyCommand {
-            let command = UIKeyCommand(title: title, action: action, input: input, modifierFlags: modifiers)
-            command.wantsPriorityOverSystemBehavior = true
-            return command
-        }
-        return [
-            command("Toggle Line Comment", "/", .command, #selector(keyToggleComment)),
-            command("Indent Line", "]", .command, #selector(keyIndent)),
-            command("Outdent Line", "[", .command, #selector(keyOutdent)),
-            command("Outdent", "\t", .shift, #selector(keyOutdent)),
-            command("Move Line Up", UIKeyCommand.inputUpArrow, .alternate, #selector(keyMoveUp)),
-            command("Move Line Down", UIKeyCommand.inputDownArrow, .alternate, #selector(keyMoveDown)),
-            command("Copy Line Down", UIKeyCommand.inputDownArrow, [.alternate, .shift], #selector(keyDuplicate)),
-            command("Delete Line", "k", [.command, .shift], #selector(keyDeleteLines)),
-            command("Insert Line Below", "\r", .command, #selector(keyInsertBelow)),
-            command("Insert Line Above", "\r", [.command, .shift], #selector(keyInsertAbove)),
-            command("Go to Bracket", "\\", [.command, .shift], #selector(keyJumpToBracket)),
-            command("Expand Line Selection", "l", .command, #selector(keySelectLine)),
-            command("Add Selection to Next Find Match", "d", .command, #selector(keySelectNext)),
-            command("Find", "f", .command, #selector(keyFind)),
-            command("Replace", "f", [.command, .alternate], #selector(keyReplace)),
-            command("Find Next", "g", .command, #selector(keyFindNext)),
-            command("Find Previous", "g", [.command, .shift], #selector(keyFindPrevious)),
-            command("Close Find", UIKeyCommand.inputEscape, [], #selector(keyEscape)),
-        ]
-    }()
-
-    @objc private func keyToggleComment() { toggleComment() }
-    @objc private func keyIndent() { indentLines() }
-    @objc private func keyOutdent() { outdentLines() }
-    @objc private func keyMoveUp() { moveLines(up: true) }
-    @objc private func keyMoveDown() { moveLines(up: false) }
-    @objc private func keyDuplicate() { duplicateLines() }
-    @objc private func keyDeleteLines() { deleteLines() }
-    @objc private func keyInsertBelow() { insertLine(above: false) }
-    @objc private func keyInsertAbove() { insertLine(above: true) }
-    @objc private func keyJumpToBracket() { jumpToBracket() }
-    @objc private func keySelectLine() { selectLine() }
-    @objc private func keySelectNext() { selectNextOccurrence() }
-    @objc private func keyFind() { showFind(replace: false) }
-    @objc private func keyReplace() { showFind(replace: true) }
-    @objc private func keyFindNext() { if find.isVisible { find.next() } else { showFind(replace: false) } }
-    @objc private func keyFindPrevious() { if find.isVisible { find.previous() } else { showFind(replace: false) } }
-    @objc private func keyEscape() { if find.isVisible { hideFind() } }
 }
 
 private extension TextEdit {
