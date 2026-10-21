@@ -173,6 +173,27 @@ struct VirtualShellTests {
         #expect(plain(shell.run("echo *")) == "keep.txt what?\n")
     }
 
+    /// As in sh, quotes and backslashes make single characters literal; the
+    /// rest of the word can still be a pattern.
+    @Test func quotingIsPerCharacterInPatterns() throws {
+        let workspace = try TemporaryWorkspace([
+            "My Folder/a.swift": "A\n", "My Folder/b.swift": "B\n", "My Folder/c.md": "",
+            "a*b1": "", "a*b2": "", "axb3": "", "a.txt": "", "b.txt": "", "c.txt": "",
+        ])
+        let shell = VirtualShell(root: workspace.url)
+        #expect(plain(shell.run("cat My\\ Folder/*.swift")) == "A\nB\n")
+        #expect(plain(shell.run("echo \"My Folder\"/*.swift")) == "My Folder/a.swift My Folder/b.swift\n")
+        #expect(plain(shell.run("echo a\\*b*")) == "a*b1 a*b2\n")
+        #expect(plain(shell.run("echo [ab].txt")) == "a.txt b.txt\n")
+        #expect(plain(shell.run("echo \\[ab].txt '[ab]'.txt")) == "[ab].txt [ab].txt\n")
+        #expect(plain(shell.run("echo \\* \"*\" '*'")) == "* * *\n")
+        // A pattern that matches nothing stays as written, without its quotes.
+        #expect(plain(shell.run("echo My\\ Folder/*.zzz \"a\"*.zzz")) == "My Folder/*.zzz a*.zzz\n")
+        // Braces in a pattern are alternatives unless quoted.
+        #expect(plain(shell.run("echo My\\ Folder/*.{swift,md}")) == "My Folder/a.swift My Folder/b.swift My Folder/c.md\n")
+        #expect(plain(shell.run("echo *.\"{txt,md}\"")) == "*.{txt,md}\n")
+    }
+
     @Test func rmdirRefusesTheWorkspaceRoot() throws {
         let workspace = try TemporaryWorkspace()
         let shell = VirtualShell(root: workspace.url)
