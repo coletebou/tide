@@ -28,8 +28,8 @@ struct EditorGroupView: View {
                 TabBar(workbench: workbench, group: group)
             }
             if let tab = group.activeTab {
-                if case .file(let path) = tab.content {
-                    BreadcrumbsBar(workbench: workbench, path: path)
+                if tab.content.filePath != nil || tab.content == .userSettingsJSON {
+                    BreadcrumbsBar(workbench: workbench, content: tab.content)
                 }
                 content(for: tab)
                     .id(tab.id)
@@ -44,7 +44,7 @@ struct EditorGroupView: View {
     @ViewBuilder
     private func content(for tab: EditorTab) -> some View {
         switch tab.content {
-        case .file:
+        case .file, .userSettingsJSON:
             if let controller = workbench.controller(for: tab) {
                 CodeEditorView(controller: controller)
                     .overlay(alignment: .topTrailing) {
@@ -54,7 +54,7 @@ struct EditorGroupView: View {
                         }
                     }
                     .overlay(alignment: .top) {
-                        if let document = workbench.document(for: tab.content.filePath ?? ""), document.hasConflict {
+                        if let document = workbench.document(for: tab.content), document.hasConflict {
                             ConflictBanner(workbench: workbench, document: document)
                         }
                     }
@@ -146,13 +146,14 @@ struct TabItem: View {
 
     private var isActive: Bool { group.activeTabID == tab.id }
     private var isFocusedGroup: Bool { workbench.activeGroupID == group.id }
-    private var isDirty: Bool { tab.content.filePath.flatMap { workbench.document(for: $0)?.isDirty } ?? false }
+    private var isDirty: Bool { workbench.document(for: tab.content)?.isDirty ?? false }
 
     var body: some View {
         let title = tab.title(in: workbench)
         HStack(spacing: 6) {
             switch tab.content {
             case .file(let path): FileIcon(name: WorkspacePath.name(of: path), size: 13)
+            case .userSettingsJSON: FileIcon(name: Workbench.settingsPath, size: 13)
             case .welcome: Image(systemName: "hand.wave").font(.system(size: 12))
             case .settings: Image(systemName: "gearshape").font(.system(size: 12))
             case .markdownPreview: Image(systemName: "eye").font(.system(size: 12))
@@ -232,8 +233,11 @@ struct TabItem: View {
 /// Path segments and the symbol at the cursor (22pt).
 struct BreadcrumbsBar: View {
     @Bindable var workbench: Workbench
-    let path: String
+    /// A workspace file or the user's settings.json.
+    let content: EditorContent
     @Environment(\.theme) private var theme
+
+    private var path: String { content.filePath ?? Workbench.settingsPath }
 
     var body: some View {
         HStack(spacing: 2) {
@@ -281,7 +285,7 @@ struct BreadcrumbsBar: View {
     }
 
     private var symbolPath: [DocumentSymbol] {
-        guard let document = workbench.document(for: path) else { return [] }
+        guard let document = workbench.document(for: content) else { return [] }
         var chain: [DocumentSymbol] = []
         var level = document.symbols
         let line = workbench.cursorLine

@@ -48,7 +48,11 @@ enum PanelKind: String, CaseIterable, Identifiable, Codable {
 
 /// What an editor tab shows.
 enum EditorContent: Hashable, Codable {
+    /// A file in the workspace, by its workspace-relative path.
     case file(String)
+    /// The user's settings.json, which lives in Tide's own folder rather than
+    /// the workspace, so a workspace file of the same name is a different document.
+    case userSettingsJSON
     case welcome
     case settings
     case markdownPreview(String)
@@ -103,7 +107,8 @@ final class Workbench {
     private(set) var workspace: Workspace
     var groups: [EditorGroup]
     var activeGroupID: UUID
-    private(set) var documents: [String: TextDocument] = [:]
+    /// Open text documents, by the tab content that shows them.
+    private(set) var documents: [EditorContent: TextDocument] = [:]
     private(set) var recentlyClosed: [EditorContent] = []
     private(set) var recentFiles: [String] = []
 
@@ -131,7 +136,7 @@ final class Workbench {
     let scm = SourceControlModel()
 
     @ObservationIgnored private var controllers: [UUID: EditorController] = [:]
-    @ObservationIgnored private var autoSaveTasks: [String: Task<Void, Never>] = [:]
+    @ObservationIgnored private var autoSaveTasks: [UUID: Task<Void, Never>] = [:]
     @ObservationIgnored private var untitledCounter = 0
 
     init(workspace: Workspace) {
@@ -155,8 +160,8 @@ final class Workbench {
     var activeTab: EditorTab? { activeGroup.activeTab }
 
     var activeDocument: TextDocument? {
-        guard let path = activeTab?.content.filePath else { return nil }
-        return documents[path]
+        guard let content = activeTab?.content else { return nil }
+        return documents[content]
     }
 
     var activeController: EditorController? {
@@ -164,12 +169,15 @@ final class Workbench {
         return controllers[tab.id]
     }
 
-    func document(for path: String) -> TextDocument? { documents[path] }
+    /// The open document of a workspace file.
+    func document(for path: String) -> TextDocument? { documents[.file(path)] }
+
+    func document(for content: EditorContent) -> TextDocument? { documents[content] }
 
     /// The editor view controller for a tab, created on first use.
     func controller(for tab: EditorTab) -> EditorController? {
         if let existing = controllers[tab.id] { return existing }
-        guard let path = tab.content.filePath, let document = documents[path] else { return nil }
+        guard let document = documents[tab.content] else { return nil }
         let controller = EditorController(document: document, theme: theme, configuration: editorConfiguration)
         controller.onCursorChange = { [weak self] line, column, selected in
             self?.cursorLine = line
@@ -189,10 +197,10 @@ final class Workbench {
         let group = group ?? activeGroup
         let usePreview = preview ?? settings.bool("workbench.editor.enablePreview")
         do {
-            if documents[path] == nil {
+            if documents[.file(path)] == nil {
                 let document = try await TextDocument.load(path: path, fileSystem: workspace.fileSystem, theme: theme, fonts: editorConfiguration.fonts, settings: settings)
                 document.onEdit = { [weak self] document in self?.documentEdited(document) }
-                documents[path] = document
+                documents[.file(path)] = document
             }
         } catch {
             show(error: error, prefix: "Unable to open '\(WorkspacePath.name(of: path))'")
@@ -203,14 +211,26 @@ final class Workbench {
         if recentFiles.count > 30 { recentFiles.removeLast() }
         let tab = place(.file(path), preview: usePreview, in: group)
         activeGroupID = group.id
-        if let line {
-            // Let the editor view appear before moving the caret.
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(80))
-                self.controllers[tab.id]?.goTo(line: line, column: column)
-            }
-        }
+        if let line { goTo(line: line, column: column, in: tab) }
         Task { await workspace.reveal(path) }
+    }
+
+    /// Opens a document at a position, as the Problems panel does.
+    func open(_ content: EditorContent, line: Int, column: Int) async {
+        if let path = content.filePath {
+            await open(path, preview: false, line: line, column: column)
+        } else if content == .userSettingsJSON {
+            await openSettingsJSON()
+            if let tab = activeTab, tab.content == content { goTo(line: line, column: column, in: tab) }
+        }
+    }
+
+    private func goTo(line: Int, column: Int, in tab: EditorTab) {
+        // Let the editor view appear before moving the caret.
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(80))
+            self.controllers[tab.id]?.goTo(line: line, column: column)
+        }
     }
 
     func open(_ content: EditorContent, in group: EditorGroup? = nil) {
@@ -280,7 +300,7 @@ final class Workbench {
     }
 
     func closeSaved(in group: EditorGroup) {
-        for tab in group.tabs where !(tab.content.filePath.flatMap { documents[$0]?.isDirty } ?? false) { close(tab, in: group) }
+        for tab in group.tabs where documents[tab.content]?.isDirty != true { close(tab, in: group) }
     }
 
     func closeAll(in group: EditorGroup) {
@@ -291,6 +311,8 @@ final class Workbench {
         guard let content = recentlyClosed.popLast() else { return }
         if let path = content.filePath {
             Task { await open(path, preview: false) }
+        } else if content == .userSettingsJSON {
+            Task { await openSettingsJSON() }
         } else {
             open(content)
         }
@@ -323,9 +345,9 @@ final class Workbench {
 
     /// Drops documents no tab shows, unless they have unsaved edits.
     private func releaseUnusedDocuments() {
-        let shown = Set(groups.flatMap(\.tabs).compactMap { $0.content.filePath })
-        for (path, document) in documents where !shown.contains(path) && !document.isDirty {
-            documents[path] = nil
+        let shown = Set(groups.flatMap(\.tabs).map(\.content))
+        for (content, document) in documents where !shown.contains(content) && !document.isDirty {
+            documents[content] = nil
         }
     }
 
@@ -350,8 +372,8 @@ final class Workbench {
         do {
             try await document.save(trimTrailingWhitespace: settings.bool("files.trimTrailingWhitespace"), insertFinalNewline: settings.bool("files.insertFinalNewline"))
             log("Saved \(document.path)")
-            if document.path == Self.settingsPath {
-                applySettingsText(document.text)
+            if document === documents[.userSettingsJSON] {
+                applySettingsText(document.savedContent)
             }
             await search.documentSaved()
         } catch {
@@ -375,14 +397,14 @@ final class Workbench {
     private func documentEdited(_ document: TextDocument) {
         // Editing a preview tab keeps it open, as in VS Code.
         for group in groups {
-            if let index = group.tabs.firstIndex(where: { $0.content == .file(document.path) && $0.isPreview }) {
+            if let index = group.tabs.firstIndex(where: { $0.isPreview && documents[$0.content] === document }) {
                 group.tabs[index].isPreview = false
             }
         }
         guard settings.string("files.autoSave") == "afterDelay", document.isDirty else { return }
-        autoSaveTasks[document.path]?.cancel()
+        autoSaveTasks[document.id]?.cancel()
         let delay = max(100, settings.int("files.autoSaveDelay"))
-        autoSaveTasks[document.path] = Task { [weak self, weak document] in
+        autoSaveTasks[document.id] = Task { [weak self, weak document] in
             try? await Task.sleep(for: .milliseconds(delay))
             guard !Task.isCancelled, let self, let document, document.isDirty else { return }
             await self.save(document)
@@ -396,11 +418,12 @@ final class Workbench {
     }
 
     func renamed(_ oldPath: String, to newPath: String) {
-        for (path, document) in documents where WorkspacePath.isDescendant(path, of: oldPath) {
+        for (content, document) in documents {
+            guard let path = content.filePath, WorkspacePath.isDescendant(path, of: oldPath) else { continue }
             let updated = newPath + path.dropFirst(oldPath.count)
             document.didMove(to: updated)
-            documents[path] = nil
-            documents[updated] = document
+            documents[content] = nil
+            documents[.file(updated)] = document
         }
         for group in groups {
             for index in group.tabs.indices {
@@ -417,7 +440,7 @@ final class Workbench {
                 close(tab, in: group)
             }
         }
-        for key in documents.keys where WorkspacePath.isDescendant(key, of: path) { documents[key] = nil }
+        for content in documents.keys where content.filePath.map({ WorkspacePath.isDescendant($0, of: path) }) ?? false { documents[content] = nil }
     }
 
     /// Switches to another folder, closing editors of the old one. When an
@@ -477,7 +500,7 @@ final class Workbench {
         store.set(key, value)
         settings = store
         try? store.json().write(to: settingsURL, atomically: true, encoding: .utf8)
-        if let document = documents[Self.settingsPath], !document.isDirty, workspace.localRoot == Self.userDirectory {
+        if let document = documents[.userSettingsJSON], !document.isDirty, workspace.localRoot == Self.userDirectory {
             document.replaceText(with: store.json())
         }
         settingsChanged()
@@ -498,12 +521,12 @@ final class Workbench {
         }
         let userFileSystem = LocalFileSystem(root: Self.userDirectory, displayName: "User")
         do {
-            if documents[Self.settingsPath] == nil {
+            if documents[.userSettingsJSON] == nil {
                 let document = try await TextDocument.load(path: Self.settingsPath, fileSystem: userFileSystem, theme: theme, fonts: editorConfiguration.fonts, settings: settings)
                 document.onEdit = { [weak self] document in self?.documentEdited(document) }
-                documents[Self.settingsPath] = document
+                documents[.userSettingsJSON] = document
             }
-            _ = place(.file(Self.settingsPath), preview: false, in: activeGroup)
+            _ = place(.userSettingsJSON, preview: false, in: activeGroup)
         } catch {
             show(error: error, prefix: "Unable to open settings.json")
         }
@@ -621,11 +644,11 @@ final class Workbench {
     }
 
     /// Problems across open documents, worst first.
-    var problems: [(path: String, diagnostics: [Diagnostic])] {
-        documents.values
-            .filter { !$0.diagnostics.isEmpty }
-            .sorted { $0.path < $1.path }
-            .map { ($0.path, $0.diagnostics.sorted { ($0.severity, $0.line, $0.column) < ($1.severity, $1.line, $1.column) }) }
+    var problems: [(content: EditorContent, path: String, diagnostics: [Diagnostic])] {
+        documents
+            .filter { !$0.value.diagnostics.isEmpty }
+            .sorted { $0.value.path < $1.value.path }
+            .map { ($0.key, $0.value.path, $0.value.diagnostics.sorted { ($0.severity, $0.line, $0.column) < ($1.severity, $1.line, $1.column) }) }
     }
 
     var problemCounts: (errors: Int, warnings: Int) {
@@ -650,7 +673,7 @@ final class Workbench {
 
     func saveSession() {
         let session = Session(
-            openFiles: groups.flatMap(\.tabs).compactMap { $0.content.filePath }.filter { $0 != Self.settingsPath },
+            openFiles: groups.flatMap(\.tabs).compactMap { $0.content.filePath },
             activeFile: activeTab?.content.filePath,
             sideBarVisible: sideBarVisible,
             activeView: activeView,

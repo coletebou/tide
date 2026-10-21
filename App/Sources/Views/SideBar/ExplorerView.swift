@@ -291,6 +291,7 @@ extension EditorTab {
     func title(in workbench: Workbench) -> String {
         switch content {
         case .file(let path): WorkspacePath.name(of: path)
+        case .userSettingsJSON: Workbench.settingsPath
         case .welcome: "Welcome"
         case .settings: "Settings"
         case .markdownPreview(let path): "Preview " + WorkspacePath.name(of: path)
