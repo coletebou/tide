@@ -33,7 +33,7 @@ struct SearchView: View {
                                 Image(systemName: "text.badge.checkmark").font(.system(size: 13)).frame(width: 26, height: 26)
                             }
                             .buttonStyle(.plain)
-                            .disabled(search.results.isEmpty)
+                            .disabled(!search.canReplaceAll)
                             .accessibilityLabel("Replace All")
                         }
                     }
