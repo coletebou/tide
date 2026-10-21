@@ -22,6 +22,20 @@ jobs:
       - name: Test
         run: swift test --package-path Packages/TideCore
 
+  ssh:
+    name: TideSSH tests against OpenSSH
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show the toolchain and OpenSSH
+        run: swift --version && ssh -V && (/usr/sbin/sshd -V 2>&1 || true)
+      - name: Test
+        # The tests start their own sshd (scripts/ssh-test-server.sh); here
+        # one that cannot start fails the run instead of skipping the tests.
+        env:
+          TIDE_REQUIRE_SSHD: "1"
+        run: swift test --package-path Packages/TideSSH
+
   app:
     name: Build the iOS app
     runs-on: macos-latest
