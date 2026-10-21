@@ -178,7 +178,12 @@ struct TideCommands: Commands {
             item("Color Theme", "workbench.action.selectTheme")
             item("Keyboard Shortcuts", "workbench.action.openGlobalKeybindings")
         }
-        CommandGroup(after: .textEditing) {
+        // On iPadOS 26 no shortcut of a group placed after .textEditing reached
+        // the app: that system group owns ⌘F, ⌥⌘F, ⌘G and ⇧⌘G for the text
+        // system's find panel, which the editor turns off. It is replaced, and
+        // Tide's find commands follow the clipboard ones, as in VS Code.
+        CommandGroup(replacing: .textEditing) {}
+        CommandGroup(after: .pasteboard) {
             Divider()
             item("Find", "actions.find", "f")
             item("Replace", "editor.action.startFindReplaceAction", "f", [.command, .option])
