@@ -145,6 +145,35 @@ struct LineCommandTests {
         #expect(run("[// a\r\n\r\n// b]") { TextEditing.toggleLineComment(in: $0, selection: $1, language: swift) } == "[a\r\n\r\nb]")
     }
 
+    /// A selection that ends after a blank line includes that line: its
+    /// content is empty, so the block's content ends where it starts.
+    @Test(arguments: ["\n", "\r\n"])
+    func blocksEndingOnABlankLine(n: String) {
+        #expect(run("[a\(n)\(n)]b") { TextEditing.deleteLines(in: $0, selection: $1) } == "|b")
+        #expect(run("[a\(n)\(n)]b") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "b\(n)[a\(n)]")
+        #expect(run("x\(n)[a\(n)\(n)]b") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "[a\(n)\(n)]x\(n)b")
+        #expect(run("[a\(n)\(n)]b") { TextEditing.duplicateLines(in: $0, selection: $1) } == "a\(n)\(n)[a\(n)\(n)]b")
+        // Here the blank line is followed only by the empty line that ends the document.
+        #expect(run("[a\(n)\(n)]") { TextEditing.deleteLines(in: $0, selection: $1) } == "|")
+        #expect(run("[a\(n)\(n)]") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "\(n)[a\(n)]")
+        #expect(run("x\(n)[a\(n)\(n)]") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "[a\(n)\(n)]x\(n)")
+    }
+
+    /// A duplicate copies each line's own break: here CRLF, then LF on the blank line.
+    @Test func duplicatesMixedLineBreaksAsTheyAre() {
+        #expect(run("[a\r\n\n]b") { TextEditing.duplicateLines(in: $0, selection: $1) } == "a\r\n\n[a\r\n\n]b")
+    }
+
+    /// A whole-line selection runs to the start of the next line. Moved down
+    /// onto the last line, which has no line break, it must still end inside the text.
+    @Test(arguments: ["\n", "\r\n"])
+    func movingDownOntoTheLastLineKeepsTheSelectionInBounds(n: String) throws {
+        let text = "a\(n)b" as NSString
+        let edit = try #require(TextEditing.moveLines(up: false, in: text, selection: NSRange(location: 0, length: text.length - 1)))
+        #expect(edit.apply(to: text as String) == "b\(n)a")
+        #expect(edit.selection == NSRange(location: text.length - 1, length: 1))
+    }
+
     @Test func movesLinesPastAnEmptyLastLine() {
         #expect(run("a\nb|\n") { TextEditing.moveLines(up: false, in: $0, selection: $1) } == "a\n\nb|")
         #expect(run("a\n|") { TextEditing.moveLines(up: true, in: $0, selection: $1) } == "|\na")
