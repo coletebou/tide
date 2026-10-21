@@ -363,8 +363,11 @@ final class Workbench {
         if let document = activeDocument { await save(document) }
     }
 
-    func saveAll() async {
+    /// Saves every dirty document; returns false when one is still unsaved.
+    @discardableResult
+    func saveAll() async -> Bool {
         for document in documents.values where document.isDirty { await save(document) }
+        return dirtyCount == 0
     }
 
     var dirtyCount: Int { documents.values.filter(\.isDirty).count }
@@ -417,9 +420,14 @@ final class Workbench {
         for key in documents.keys where WorkspacePath.isDescendant(key, of: path) { documents[key] = nil }
     }
 
-    /// Switches to another folder, closing editors of the old one.
-    func openWorkspace(_ workspace: Workspace) async {
-        await saveAll()
+    /// Switches to another folder, closing editors of the old one. When an
+    /// unsaved file cannot be saved, the old folder stays open and this returns false.
+    @discardableResult
+    func openWorkspace(_ workspace: Workspace) async -> Bool {
+        guard await saveAll() else {
+            toast("'\(workspace.name)' was not opened because some changes could not be saved. Save or revert them, then try again.", kind: .error)
+            return false
+        }
         for group in groups { for tab in group.tabs { discardController(for: tab) } }
         documents = [:]
         let group = EditorGroup()
@@ -436,6 +444,7 @@ final class Workbench {
         } else {
             open(.welcome)
         }
+        return true
     }
 
     // MARK: - Settings and theme
