@@ -581,7 +581,7 @@ final class Workbench {
         for controller in controllers.values {
             controller.apply(theme: theme, configuration: editorConfiguration, restyleDocument: false)
         }
-        terminals.applyTheme(theme, fontSize: settings.number("terminal.integrated.fontSize"))
+        terminals.apply(theme: theme, settings: settings)
     }
 
     func adjustFontSize(by delta: Double) {

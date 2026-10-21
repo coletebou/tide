@@ -104,6 +104,7 @@ public enum SettingsRegistry {
         .init("search.useIgnoreFiles", "Use Ignore Files", "Respect .gitignore files when searching.", .search, .bool(true)),
         .init("terminal.integrated.fontSize", "Terminal Font Size", "Controls the font size of the terminal.", .terminal, .number(13), range: 8...30),
         .init("terminal.integrated.cursorStyle", "Terminal Cursor Style", "Controls the terminal cursor style.", .terminal, .string("block"), options: ["block", "line", "underline"]),
+        .init("terminal.integrated.cursorBlinking", "Terminal Cursor Blinking", "Controls whether the terminal cursor blinks.", .terminal, .bool(false)),
         .init("tide.keyboardBar.enabled", "Keyboard Bar", "Show a row of coding keys (Tab, Esc, Ctrl, arrows, brackets) above the on-screen keyboard.", .editor, .bool(true)),
         .init("remote.SSH.connectTimeout", "Connect Timeout", "Seconds to wait for an SSH connection.", .remote, .number(15), range: 1...120),
         .init("remote.SSH.keepAliveInterval", "Keep-Alive Interval", "Seconds between SSH keep-alive messages; 0 turns them off.", .remote, .number(30), range: 0...600),

@@ -34,7 +34,7 @@ final class TerminalSession: Identifiable {
         }
     }
 
-    func apply(theme: Theme, fontSize: Double) {
+    func apply(theme: Theme, settings: SettingsStore) {
         let ansiKeys = ["Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White"]
         let colors = (ansiKeys.map { "terminal.ansi\($0)" } + ansiKeys.map { "terminal.ansiBright\($0)" }).map { key -> SwiftTerm.Color in
             let color = theme[key]
@@ -44,7 +44,18 @@ final class TerminalSession: Identifiable {
         view.nativeBackgroundColor = theme.uiColor("terminal.background")
         view.nativeForegroundColor = theme.uiColor("terminal.foreground")
         view.caretColor = theme.uiColor("terminalCursor.foreground")
-        view.font = UIFont.monospacedSystemFont(ofSize: CGFloat(fontSize), weight: .regular)
+        view.font = UIFont.monospacedSystemFont(ofSize: CGFloat(settings.number("terminal.integrated.fontSize")), weight: .regular)
+        view.getTerminal().setCursorStyle(Self.cursorStyle(settings.string("terminal.integrated.cursorStyle"), blinking: settings.bool("terminal.integrated.cursorBlinking")))
+    }
+
+    /// VS Code's cursor style names. As in VS Code the cursor is steady unless
+    /// blinking is turned on, which also spares the battery an endless animation.
+    static func cursorStyle(_ name: String, blinking: Bool) -> CursorStyle {
+        switch name {
+        case "line": blinking ? .blinkBar : .steadyBar
+        case "underline": blinking ? .blinkUnderline : .steadyUnderline
+        default: blinking ? .blinkBlock : .steadyBlock
+        }
     }
 
     func clear() {
@@ -129,7 +140,7 @@ final class TerminalManager {
         guard let workbench else { return }
         counter += 1
         let session = TerminalSession(localRoot: workbench.workspace.localRoot, title: "tide-sh", workbench: workbench)
-        session.apply(theme: workbench.theme, fontSize: workbench.settings.number("terminal.integrated.fontSize"))
+        session.apply(theme: workbench.theme, settings: workbench.settings)
         sessions.append(session)
         activeSessionID = session.id
     }
@@ -141,8 +152,8 @@ final class TerminalManager {
 
     func clearActive() { activeSession?.clear() }
 
-    func applyTheme(_ theme: Theme, fontSize: Double) {
-        for session in sessions { session.apply(theme: theme, fontSize: fontSize) }
+    func apply(theme: Theme, settings: SettingsStore) {
+        for session in sessions { session.apply(theme: theme, settings: settings) }
     }
 
     func workspaceChanged() {
