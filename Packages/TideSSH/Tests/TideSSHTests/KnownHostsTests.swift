@@ -71,6 +71,25 @@ struct KnownHostsTests {
         #expect(KnownHosts(hosts.text) == hosts)
     }
 
+    /// Forgetting one host must not forget a revocation, or trust that
+    /// patterns and other names on its line give other hosts.
+    @Test func forgettingAHostKeepsRevocationsPatternsAndOtherNames() {
+        let lines = [
+            "@revoked * \(ed25519) \(other)",
+            "*.example.com \(ed25519) \(key)",
+            "a.example.com,b.example.com \(ed25519) \(key)",
+            "\(hashedExample) \(ed25519) \(key)",
+        ]
+        var hosts = KnownHosts(lines.joined(separator: "\n"))
+        hosts.remove(host: "a.example.com", port: 22)
+        #expect(hosts.text == [lines[0], lines[1], "b.example.com \(ed25519) \(key)", lines[3]].joined(separator: "\n"))
+        #expect(hosts.verdict(host: "b.example.com", port: 22, keyType: ed25519, key: other) == .revoked)
+        #expect(hosts.verdict(host: "a.example.com", port: 22, keyType: ed25519, key: key) == .trusted, "the wildcard line still covers it")
+        hosts.remove(host: "example.com", port: 22)
+        #expect(!hosts.text.contains(hashedExample))
+        #expect(hosts.text.contains("@revoked *"))
+    }
+
     @Test func splitsOpenSSHPublicKeys() {
         let split = KnownHosts.split(openSSHKey: "\(ed25519) \(key) vector")
         #expect(split?.keyType == ed25519)

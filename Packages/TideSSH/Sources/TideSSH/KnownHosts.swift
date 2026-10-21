@@ -56,14 +56,32 @@ public struct KnownHosts: Equatable, Sendable {
         entries.append(Entry(marker: nil, hosts: name, keyType: keyType, key: key))
     }
 
-    /// Forgets every line that names the host, as `ssh-keygen -R` does.
+    /// Forgets the host's keys: its hashed lines, and its name in plain lines,
+    /// dropping a line it was the only name on. Wildcard patterns, which may
+    /// stand for other hosts too, stay, and so do `@revoked` and
+    /// `@cert-authority` lines, as `ssh-keygen -R` keeps them.
     public mutating func remove(host: String, port: Int) {
         let name = Self.name(host: host, port: port)
-        text = text.components(separatedBy: "\n").filter { line in
-            guard let entry = Self.parse(line) else { return true }
-            return !Self.matches(name, entry.hosts)
-        }.joined(separator: "\n")
-        entries.removeAll { Self.matches(name, $0.hosts) }
+        var kept: [String] = []
+        for line in text.components(separatedBy: "\n") {
+            guard let entry = Self.parse(line), entry.marker == nil else {
+                kept.append(line)
+                continue
+            }
+            if entry.hosts.hasPrefix("|1|") {
+                if !Self.hashedMatches(name, entry.hosts) { kept.append(line) }
+                continue
+            }
+            let patterns = entry.hosts.split(separator: ",").map(String.init)
+            let others = patterns.filter { $0.lowercased() != name }
+            if others.count == patterns.count {
+                kept.append(line)
+            } else if !others.isEmpty, let range = line.range(of: entry.hosts) {
+                kept.append(line.replacingCharacters(in: range, with: others.joined(separator: ",")))
+            }
+        }
+        text = kept.joined(separator: "\n")
+        entries = text.split(whereSeparator: \.isNewline).compactMap { Self.parse(String($0)) }
     }
 
     /// The host as known_hosts names it: bare on port 22, else `[host]:port`.
