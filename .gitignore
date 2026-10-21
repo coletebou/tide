@@ -11,4 +11,6 @@ xcuserdata/
 Packages/TideCore/.build/
 # Local agent settings (machine-specific)
 .claude/settings.local.json
+# Agent worktrees nested in the checkout
+.claude/worktrees/
 .DS_Store
