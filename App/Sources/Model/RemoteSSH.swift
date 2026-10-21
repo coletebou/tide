@@ -108,8 +108,9 @@ final class RemoteSSH {
     }
 }
 
-/// Resumes a continuation once, with whichever answer comes first.
-private final class Reply<Value> {
+/// Resumes a continuation once, with whichever answer comes first. The
+/// answers cross from the prompt to the waiting connection, so they are Sendable.
+private final class Reply<Value: Sendable> {
     private var continuation: CheckedContinuation<Value, Never>?
 
     init(_ continuation: CheckedContinuation<Value, Never>) {
