@@ -498,6 +498,11 @@ public final class VirtualShell {
                 files.append(arg)
             }
         }
+        if count < 0 {
+            // head(1) refuses a negative count; tail(1) counts from the end either way.
+            guard !head else { return CommandResult(stderr: "head: illegal line count -- \(count)\n", exitCode: 1) }
+            count = Int(clamping: count.magnitude)
+        }
         let text = files.isEmpty ? (stdin ?? "") : try cat(files, stdin: nil).stdout
         var lines = text.components(separatedBy: "\n")
         if lines.last == "" { lines.removeLast() }

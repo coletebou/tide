@@ -53,6 +53,19 @@ struct VirtualShellTests {
         #expect(plain(shell.run("seq 3 | sort -r")) == "3\n2\n1\n")
     }
 
+    /// head(1) rejects a negative count and tail(1) counts from the end
+    /// either way; Swift's `prefix` and `suffix` would trap on them.
+    @Test func headAndTailHandleNegativeCounts() throws {
+        let workspace = try TemporaryWorkspace(["list.txt": "1\n2\n3\n"])
+        let shell = VirtualShell(root: workspace.url)
+        let head = shell.run("head -n -1 list.txt")
+        #expect(plain(head) == "head: illegal line count -- -1\n")
+        #expect(head.exitCode == 1)
+        #expect(plain(shell.run("head --2 list.txt")) == "head: illegal line count -- -2\n")
+        #expect(plain(shell.run("tail -n -1 list.txt")) == "3\n")
+        #expect(plain(shell.run("tail -n -9223372036854775808 list.txt")) == "1\n2\n3\n")
+    }
+
     @Test func globsFindAndTree() throws {
         let workspace = try TemporaryWorkspace(["a.swift": "", "b.swift": "", "c.md": "", "dir/d.swift": ""])
         let shell = VirtualShell(root: workspace.url)
@@ -168,23 +181,6 @@ struct VirtualShellTests {
         #expect(FileManager.default.fileExists(atPath: workspace.url.path))
         #expect(shell.run("mkdir empty && rmdir empty").exitCode == 0)
     }
-
-    #if os(macOS)
-    /// Swift's `prefix` and `suffix` trap on negative lengths.
-    @Test func negativeHeadCountDoesNotCrash() async {
-        await #expect(processExitsWith: .success) {
-            let workspace = try TemporaryWorkspace(["list.txt": "1\n2\n3\n"])
-            _ = VirtualShell(root: workspace.url).run("head -n -1 list.txt")
-        }
-    }
-
-    @Test func negativeTailCountDoesNotCrash() async {
-        await #expect(processExitsWith: .success) {
-            let workspace = try TemporaryWorkspace(["list.txt": "1\n2\n3\n"])
-            _ = VirtualShell(root: workspace.url).run("tail -n -1 list.txt")
-        }
-    }
-    #endif
 }
 
 struct LineEditorTests {
